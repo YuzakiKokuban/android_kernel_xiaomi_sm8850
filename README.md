@@ -1,156 +1,197 @@
-# How do I submit patches to Android Common Kernels
+<!-- BEGIN-ZH -->
+# Kokuban 内核 for 小米 17 系列
 
-1. BEST: Make all of your changes to upstream Linux. If appropriate, backport to the stable releases.
-   These patches will be merged automatically in the corresponding common kernels. If the patch is already
-   in upstream Linux, post a backport of the patch that conforms to the patch requirements below.
-   - Do not send patches upstream that contain only symbol exports. To be considered for upstream Linux,
-additions of `EXPORT_SYMBOL_GPL()` require an in-tree modular driver that uses the symbol -- so include
-the new driver or changes to an existing driver in the same patchset as the export.
-   - When sending patches upstream, the commit message must contain a clear case for why the patch
-is needed and beneficial to the community. Enabling out-of-tree drivers or functionality is not
-a persuasive case.
+<p align="center">
+<img src="https://raw.githubusercontent.com/YuzakiKokuban/Kokuban_Kernel_CI_Center/main/docs/kokuban_logo.png" alt="Logo" width="150">
+</p>
 
-2. LESS GOOD: Develop your patches out-of-tree (from an upstream Linux point-of-view). Unless these are
-   fixing an Android-specific bug, these are very unlikely to be accepted unless they have been
-   coordinated with kernel-team@android.com. If you want to proceed, post a patch that conforms to the
-   patch requirements below.
+<p align="center">
+<a href="https://github.com/YuzakiKokuban/android_kernel_xiaomi_sm8850/releases"><img src="https://img.shields.io/github/v/release/YuzakiKokuban/android_kernel_samsung_sm8750?style=for-the-badge&logo=github&color=blue" alt="GitHub release"></a>
+<a href="https://t.me/kokubanchat"><img src="https://img.shields.io/badge/Telegram-交流群-blue.svg?style=for-the-badge&logo=telegram" alt="Telegram"></a>
+</p>
 
-# Common Kernel patch requirements
+这是一个基于三星官方内核源码构建的，适用于 **小米 17 系列** 的高性能自定义内核。它旨在提供卓越的稳定性和流畅度，同时集成了最新的 KernelSU 功能，为您带来最佳的玩机体验。
 
-- All patches must conform to the Linux kernel coding standards and pass `scripts/checkpatch.pl`
-- Patches shall not break gki_defconfig or allmodconfig builds for arm, arm64, x86, x86_64 architectures
-(see  https://source.android.com/setup/build/building-kernels)
-- If the patch is not merged from an upstream branch, the subject must be tagged with the type of patch:
-`UPSTREAM:`, `BACKPORT:`, `FROMGIT:`, `FROMLIST:`, or `ANDROID:`.
-- All patches must have a `Change-Id:` tag (see https://gerrit-review.googlesource.com/Documentation/user-changeid.html)
-- If an Android bug has been assigned, there must be a `Bug:` tag.
-- All patches must have a `Signed-off-by:` tag by the author and the submitter
+## 📌 主要特性
 
-Additional requirements are listed below based on patch type
+* **官方源码基础**: 基于三星官方最新的内核源码，确保最佳的兼容性和稳定性。
 
-## Requirements for backports from mainline Linux: `UPSTREAM:`, `BACKPORT:`
+* **性能优化**: 针对性的性能调度优化，带来更流畅的日常使用和游戏体验。
 
-- If the patch is a cherry-pick from Linux mainline with no changes at all
-    - tag the patch subject with `UPSTREAM:`.
-    - add upstream commit information with a `(cherry picked from commit ...)` line
-    - Example:
-        - if the upstream commit message is
-```
-        important patch from upstream
+* **KernelSU 集成**: 内置多种 KernelSU 版本（包括官方版、MKSU、ReSukiSU），开箱即用。
 
-        This is the detailed description of the important patch
+* **版本信息**: `-android16-Kokuban-SilverWolf`
 
-        Signed-off-by: Fred Jones <fred.jones@foo.org>
-```
->- then Joe Smith would upload the patch for the common kernel as
-```
-        UPSTREAM: important patch from upstream
+## 🧩 可用版本详解
 
-        This is the detailed description of the important patch
+* **LKM (Loadable Kernel Module)**
 
-        Signed-off-by: Fred Jones <fred.jones@foo.org>
+  * 未内置任何 Root 方案，保持官方内核的纯净性。
 
-        Bug: 135791357
-        Change-Id: I4caaaa566ea080fa148c5e768bb1a0b6f7201c01
-        (cherry picked from commit c31e73121f4c1ec41143423ac6ce3ce6dafdcec1)
-        Signed-off-by: Joe Smith <joe.smith@foo.org>
-```
+  * **安全性**: 仅移除了部分影响玩机的三星安全策略，如 RKP, KDP 等。
 
-- If the patch requires any changes from the upstream version, tag the patch with `BACKPORT:`
-instead of `UPSTREAM:`.
-    - use the same tags as `UPSTREAM:`
-    - add comments about the changes under the `(cherry picked from commit ...)` line
-    - Example:
-```
-        BACKPORT: important patch from upstream
+  * **使用方式**: 需要您通过 KernelSU Manager App 手动修补设备的 `init_boot` 分区来实现 Root。
 
-        This is the detailed description of the important patch
+* **KSU (KernelSU)**
 
-        Signed-off-by: Fred Jones <fred.jones@foo.org>
+  * 内置官方原版 KernelSU，提供最原汁原味的 Root 体验。
 
-        Bug: 135791357
-        Change-Id: I4caaaa566ea080fa148c5e768bb1a0b6f7201c01
-        (cherry picked from commit c31e73121f4c1ec41143423ac6ce3ce6dafdcec1)
-        [joe: Resolved minor conflict in drivers/foo/bar.c ]
-        Signed-off-by: Joe Smith <joe.smith@foo.org>
-```
+* **MKSU (Magic KernelSU)**
 
-## Requirements for other backports: `FROMGIT:`, `FROMLIST:`,
+  * 内置由 `5ec1cff` 修改的 KernelSU，特性是支持 Magic Mount，可以更方便地挂载模块。
 
-- If the patch has been merged into an upstream maintainer tree, but has not yet
-been merged into Linux mainline
-    - tag the patch subject with `FROMGIT:`
-    - add info on where the patch came from as `(cherry picked from commit <sha1> <repo> <branch>)`. This
-must be a stable maintainer branch (not rebased, so don't use `linux-next` for example).
-    - if changes were required, use `BACKPORT: FROMGIT:`
-    - Example:
-        - if the commit message in the maintainer tree is
-```
-        important patch from upstream
+* **ReSuki (ReSukiSU)**
 
-        This is the detailed description of the important patch
+  * 内置功能强大的 ReSukiSU，支持 SUSFS 和 KPM 模块，为高级玩家提供更多可玩性。
 
-        Signed-off-by: Fred Jones <fred.jones@foo.org>
-```
->- then Joe Smith would upload the patch for the common kernel as
-```
-        FROMGIT: important patch from upstream
+## ⚙️ 安装指南
 
-        This is the detailed description of the important patch
+1. **解锁 Bootloader**: 请确保您的设备已经解锁 Bootloader。
 
-        Signed-off-by: Fred Jones <fred.jones@foo.org>
+2. **刷入 Recovery**: 推荐使用最新的 TWRP 或 OrangeFox Recovery。
 
-        Bug: 135791357
-        (cherry picked from commit 878a2fd9de10b03d11d2f622250285c7e63deace
-         https://git.kernel.org/pub/scm/linux/kernel/git/foo/bar.git test-branch)
-        Change-Id: I4caaaa566ea080fa148c5e768bb1a0b6f7201c01
-        Signed-off-by: Joe Smith <joe.smith@foo.org>
-```
+3. **刷入内核**: 在 Recovery 中刷入本项目 Releases 页面下载的内核 `zip` 包。
 
+4. **（仅 LKM 版本需要）修补 `init_boot`**:
 
-- If the patch has been submitted to LKML, but not accepted into any maintainer tree
-    - tag the patch subject with `FROMLIST:`
-    - add a `Link:` tag with a link to the submittal on lore.kernel.org
-    - add a `Bug:` tag with the Android bug (required for patches not accepted into
-a maintainer tree)
-    - if changes were required, use `BACKPORT: FROMLIST:`
-    - Example:
-```
-        FROMLIST: important patch from upstream
+   * 备份您设备当前的 `init_boot.img`。
 
-        This is the detailed description of the important patch
+   * 使用 KernelSU Manager App 选择并修补该镜像。
 
-        Signed-off-by: Fred Jones <fred.jones@foo.org>
+   * 将修补后生成的 `init_boot.img` 通过 Fastboot 或 Recovery 刷入设备的 `init_boot` 分区。
 
-        Bug: 135791357
-        Link: https://lore.kernel.org/lkml/20190619171517.GA17557@someone.com/
-        Change-Id: I4caaaa566ea080fa148c5e768bb1a0b6f7201c01
-        Signed-off-by: Joe Smith <joe.smith@foo.org>
-```
+5. **重启设备**, 享受新内核带来的快感！
 
-- If a patch has been submitted to the community, but rejected, do NOT use the
-  `FROMLIST:` tag to try to hide this fact.  Use the `ANDROID:` tag as
-  described below as this must be considered as an Android-specific submission,
-  not an upstream submission as the community will not accept these changes
-  as-is.
+## 📥 下载
 
-## Requirements for Android-specific patches: `ANDROID:`
+所有最新版本都可以在 [**Releases 页面**](https://github.com/YuzakiKokuban/android_kernel_xiaomi_sm8850/releases) 找到。
 
-- If the patch is fixing a bug to Android-specific code
-    - tag the patch subject with `ANDROID:`
-    - add a `Fixes:` tag that cites the patch with the bug
-    - Example:
-```
-        ANDROID: fix android-specific bug in foobar.c
+## ⚠️ 免责声明
 
-        This is the detailed description of the important fix
+刷机有风险，操作需谨慎。在进行任何操作前，请务必完整备份您的个人数据。因刷入此内核而导致的任何设备损坏或数据丢失，本人概不负责。
 
-        Fixes: 1234abcd2468 ("foobar: add cool feature")
-        Change-Id: I4caaaa566ea080fa148c5e768bb1a0b6f7201c01
-        Signed-off-by: Joe Smith <joe.smith@foo.org>
-```
+---
 
-- If the patch is a new feature
-    - tag the patch subject with `ANDROID:`
-    - add a `Bug:` tag with the Android bug (required for android-specific features)
+# 🥺 小小拜托
 
+## 求求你了，不要拿这个内核去适配 KernelSU-Next 啦～
+😭😭😭
+
+KernelSU-Next 不是 KernelSU 官方开发的，也不是官方认可的改进版，
+而且它的开发者有一些很让人摸不着头脑的操作……
+
+[岁月史书](https://web.archive.org/web/20250211155215/https://github.com/rifsxd/KernelSU-Next/issues/145)
+
+如果你想要类似功能的话，拜托用 **ReSukiSU** 好不好嘛～
+它更稳定，也更值得信赖！
+
+---
+
+## 如果你还是坚持要适配 KernelSU-Next……
+我真的会呜呜呜哭出来的！！！
+(｡•́︿•̀｡)
+拜托啦～谢谢谢谢！
+
+---
+<!-- END-ZH -->
+
+<!-- BEGIN-EN -->
+# Kokuban Kernel for Xiaomi 17 Series
+
+<p align="center">
+<img src="https://raw.githubusercontent.com/YuzakiKokuban/Kokuban_Kernel_CI_Center/main/docs/kokuban_logo.png" alt="Logo" width="150">
+</p>
+
+<p align="center">
+<a href="https://github.com/YuzakiKokuban/android_kernel_xiaomi_sm8850/releases"><img src="https://img.shields.io/github/v/release/YuzakiKokuban/android_kernel_samsung_sm8750?style=for-the-badge&logo=github&color=blue" alt="GitHub release"></a>
+<a href="https://t.me/kokubanchat"><img src="https://img.shields.io/badge/Telegram-Chat-blue.svg?style=for-the-badge&logo=telegram" alt="Telegram"></a>
+</p>
+
+This is a high-performance custom kernel for the **Xiaomi 17 Series**, built upon Samsung's official kernel source. It is designed to deliver exceptional stability and smoothness while integrating the latest KernelSU features for the ultimate user experience.
+
+## 📌 Highlights
+
+* **Official Source Base**: Built on the latest official kernel source from Samsung, ensuring optimal compatibility and stability.
+
+* **Performance-Tuned**: Targeted performance and scheduling optimizations for a smoother daily usage and gaming experience.
+
+* **KernelSU Integrated**: Comes with multiple KernelSU variants (Official, MKSU, ReSukiSU) built-in for an out-of-the-box experience.
+
+* **Version Info**: `-android16-Kokuban-SilverWolf`
+
+## 🧩 Available Variants Explained
+
+* **LKM (Loadable Kernel Module)**
+
+  * Does not include any built-in root solution, maintaining the purity of the stock kernel.
+
+  * **Security**: Only essential Samsung security policies that affect modding (like RKP, KDP) are removed.
+
+  * **Usage**: Requires you to manually patch your device's `init_boot` partition using the KernelSU Manager App to achieve root.
+
+* **KSU (KernelSU)**
+
+  * Built-in with the official, unmodified KernelSU for the most authentic root experience.
+
+* **MKSU (Magic KernelSU)**
+
+  * Features KernelSU modified by `5ec1cff`, which notably supports Magic Mount for easier module management.
+
+* **ReSuki (ReSukiSU)**
+
+  * Integrated with the powerful ReSukiSU, supporting SUSFS and KPM modules, offering advanced features for power users.
+
+## ⚙️ Installation Guide
+
+1. **Unlock Bootloader**: Ensure your device's bootloader is unlocked.
+
+2. **Flash Recovery**: It is recommended to use the latest version of TWRP or OrangeFox Recovery.
+
+3. **Flash Kernel**: Flash the kernel `zip` package downloaded from the Releases page in this project via Recovery.
+
+4. **(LKM Version Only) Patch `init_boot`**:
+
+   * Back up your current `init_boot.img`.
+
+   * Use the KernelSU Manager App to select and patch this image.
+
+   * Flash the resulting `kernelsu_boot.img` to your device's `init_boot` partition via Fastboot or Recovery.
+
+5. **Reboot your device** and enjoy the new kernel!
+
+## 📥 Downloads
+
+All the latest builds can be found on the [**Releases Page**](https://github.com/YuzakiKokuban/android_kernel_xiaomi_sm8850/releases).
+
+## ⚠️ Disclaimer
+
+Flashing custom software carries inherent risks. Please make a full backup of your personal data before proceeding. I am not responsible for any damage to your device or data loss that may occur as a result of flashing this kernel.
+
+---
+
+# 🥺 A Little Request
+
+## Please, please don't use this kernel for adapting KernelSU-Next~
+😭😭😭
+
+KernelSU-Next is NOT developed by the official KernelSU team, nor is it an officially endorsed improvement.
+Also, its developer has done some really confusing and questionable things...
+
+[Some Records](https://web.archive.org/web/20250211155215/https://github.com/rifsxd/KernelSU-Next/issues/145)
+
+If you need similar functionality, please use **ReSukiSU**, okay?
+It's much more stable and trustworthy!
+
+---
+
+## If you still insist on adapting it to KernelSU-Next...
+I might actually burst into tears!!!
+(｡•́︿•̀｡)
+Pleaseee~ Thank you so much!
+
+---
+<!-- END-EN -->
+
+<p align="center">
+<a href="https://www.paypal.me/LangQin280">☕ Support Me</a>
+</p>
