@@ -13,4 +13,3 @@ if [ -n "${GKI_BUILD_CONFIG_FRAGMENT}" ]; then
     echo "ERROR: GKI_BUILD_CONFIG_FRAGMENT is deprecated; use --gki_build_config_fragment instead.">&2
     exit 1
 fi
-ADDITIONAL_KMI_SYMBOL_LISTS="android/abi_gki_aarch64_xiaomi"
