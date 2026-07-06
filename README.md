@@ -1,4 +1,4 @@
-# Kokuban Kernel for sm8850 (NetHunter Edition)
+# Kokuban Kernel for Xiaomi 17 (NetHunter Edition)
 
 <p align="center">
 <img src="https://raw.githubusercontent.com/YuzakiKokuban/Kokuban_Kernel_CI_Center/main/docs/kokuban_logo.png" alt="Logo" width="150">
@@ -13,7 +13,7 @@
 
 ## Device
 
-sm8850 Series (NetHunter Edition).
+Xiaomi 17 Series (NetHunter Edition).
 
 ## What This Fork Changes
 
