@@ -21,35 +21,44 @@ The upstream Kokuban kernel is built for stability and day-to-day performance. T
 
 No scheduler, governor, or security-hardening changes from upstream have been altered beyond what upstream's own build pipeline already toggles per release mode.
 
-## NetHunter Hardware Support Added
+## NetHunter System & Hardware Support Added
 
 The following was enabled in `arch/arm64/configs/gki_defconfig` on top of the upstream config:
 
-**Wi-Fi adapters (monitor mode / packet injection capable)**
-- `CONFIG_CFG80211`, `CONFIG_CFG80211_WEXT`, `CONFIG_MAC80211` — core wireless stack required by the drivers below.
+**Core System Requirements**
+- `CONFIG_SYSVIPC`, `CONFIG_SYSVIPC_SYSCTL` — System V IPC, strictly required for Metasploit Framework and PostgreSQL database functionality.
+
+**Wi-Fi Adapters (monitor mode / packet injection capable)**
+- `CONFIG_CFG80211`, `CONFIG_CFG80211_WEXT`, `CONFIG_MAC80211` — core wireless stack.
 - `CONFIG_ATH9K_HTC` — Atheros AR9271-based USB adapters (e.g. Alfa AWUS036NHA, TP-Link TL-WN722N v1).
 - `CONFIG_RTL8187` — Realtek RTL8187L-based USB adapters (e.g. older Alfa AWUS036H).
+- `CONFIG_RT2800USB`, `CONFIG_RT2X00` — Ralink RT2870/RT3070-based adapters (e.g. Alfa AWUS036NH).
+- `CONFIG_MT7601U` — Mediatek MT7601U-based adapters.
+
+**Bluetooth Hacking**
+- `CONFIG_BT_HCIBTUSB` — Support for external USB Bluetooth dongles for BLE (Bluetooth Low Energy) penetration testing.
 
 **USB Mass Storage & File Systems**
-- `CONFIG_USB_CONFIGFS_MASS_STORAGE`, `CONFIG_USB_STORAGE`, `CONFIG_USB_UAS` — Enables core USB mass storage and USB Attached SCSI (UAS) capabilities for mounting high-speed external drives.
+- `CONFIG_USB_CONFIGFS_MASS_STORAGE`, `CONFIG_USB_STORAGE`, `CONFIG_USB_UAS` — Enables core USB mass storage and USB Attached SCSI (UAS) capabilities.
 - `CONFIG_NTFS3_FS`, `CONFIG_EXFAT_FS`, `CONFIG_VFAT_FS` — Adds robust, native read/write filesystem support for modern USB flash drives and external hard disks.
 
-**Serial / debug hardware**
-- `CONFIG_USB_SERIAL_CP210X` — Silicon Labs CP210x USB-to-serial devices, commonly used by GPS dongles, HackRF companion boards, and Arduino-based tools.
+**Serial / Debug Hardware**
+- `CONFIG_USB_SERIAL_CP210X` — Silicon Labs CP210x USB-to-serial devices (GPS dongles, HackRF).
+- `CONFIG_USB_SERIAL_CH341` — QinHeng CH341 devices (commonly used in IoT, router debugging, and cheap dev boards).
 
 **CAN bus (automotive hacking)**
 - `CONFIG_CAN_GS_USB` — Geschwister Schneider / CANtact-compatible USB-CAN adapters, used with SocketCAN tooling.
 
-**USB networking**
+**USB Networking**
 - `CONFIG_USB_NET_CDC_SUBSET` — USB Ethernet devices under the CDC subset class.
 - `CONFIG_USB_NET_RNDIS_HOST` — RNDIS-based USB tethering/network devices.
 - `CONFIG_NET_SLIP` — SLIP (Serial Line IP) tunneling over serial links.
 
 **Diagnostics**
-- `CONFIG_PACKET_DIAG` — raw `AF_PACKET` socket introspection (used by tools that inspect low-level network sockets, e.g. via `ss`).
+- `CONFIG_PACKET_DIAG` — raw `AF_PACKET` socket introspection (used by network analysis tools).
 
-**Media / SDR framework**
-- `CONFIG_MEDIA_DIGITAL_TV_SUPPORT` — enables the DVB/digital-TV subsystem framework required by RTL-SDR-adjacent tuner drivers. Note: this enables the framework only; a matching tuner driver (e.g. `CONFIG_DVB_USB_RTL28XXU`) is required separately for actual RTL-SDR dongle detection.
+**Media / SDR Framework**
+- `CONFIG_MEDIA_DIGITAL_TV_SUPPORT` — enables the DVB/digital-TV subsystem framework required by RTL-SDR-adjacent tuner drivers (e.g. `CONFIG_DVB_USB_RTL28XXU`).
 
 ## Release Variants
 
