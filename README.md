@@ -1,4 +1,4 @@
-# Kokuban 内核 for 小米 17 系列
+# Kokuban Kernel for sm8850 (NetHunter Edition)
 
 <p align="center">
 <img src="https://raw.githubusercontent.com/YuzakiKokuban/Kokuban_Kernel_CI_Center/main/docs/kokuban_logo.png" alt="Logo" width="150">
@@ -6,107 +6,80 @@
 
 <p align="center">
 <a href="https://github.com/Picters/android_kernel_xiaomi_sm8850_nethunter/releases"><img src="https://img.shields.io/github/v/release/Picters/android_kernel_xiaomi_sm8850_nethunter?style=for-the-badge&logo=github&color=blue" alt="GitHub release"></a>
-<a href="https://t.me/kokubanchat"><img src="https://img.shields.io/badge/Telegram-交流群-blue.svg?style=for-the-badge&logo=telegram" alt="Telegram"></a>
+<img src="https://img.shields.io/badge/Fork%20of-YuzakiKokuban-orange.svg?style=for-the-badge&logo=github" alt="Fork notice">
 </p>
 
-这是一个面向 **小米 17 系列** 的自定义内核项目，重点围绕稳定性、性能调优与日常可用性进行构建。项目当前维护 `LKM` 与 `ReSukiSU` 两种发行模式，以满足不同用户对纯净环境和高级功能的需求。
+> This is a fork maintained by **Picters**. All credit for the original kernel base, tuning, and release infrastructure goes to the upstream Kokuban project. This fork adds a set of driver-level configuration changes on top of the original base to support external hardware commonly used with **Kali NetHunter**.
 
-## 项目概览
+## Device
 
-* **性能优化**：提供面向日常使用与游戏场景的调度与性能调优。
-* **精简发行模式**：围绕 `LKM` 与 `ReSukiSU` 两种模式持续维护，减少历史分支带来的维护复杂度。
-* **扩展特性支持**：可按构建配置集成 `SuSFS` 与 `BBG`，其中 `SuSFS` 仅在 `ReSukiSU` 构建中启用。
-* **版本标识**：`-android16-Kokuban-SilverWolf`
+sm8850 Series (NetHunter Edition).
 
-## 发行版本说明
+## What This Fork Changes
 
-* **LKM (Loadable Kernel Module)**
-  * 不内置 Root 方案，适合希望保持内核环境尽可能精简的使用方式。
-  * 如需 Root，需要通过 KernelSU Manager App 手动修补并刷入设备的 `init_boot` 镜像。
+The upstream Kokuban kernel is built for stability and day-to-day performance. This fork keeps that base intact and layers on additional kernel configuration to enable external USB/wireless hardware that upstream does not enable by default, primarily for use with Kali NetHunter.
 
-* **ReSuki (ReSukiSU)**
-  * 集成 ReSukiSU，并支持 `SUSFS` 与 `KPM` 等高级特性。
-  * 适合有模块扩展、隐藏能力或进阶调试需求的用户。
+No scheduler, governor, or security-hardening changes from upstream have been altered beyond what upstream's own build pipeline already toggles per release mode.
 
-> 当前项目不再维护旧的内置 `KSU/MKSU` 分支模式。
+## NetHunter Hardware Support Added
 
-## 安装指南
+The following was enabled in `arch/arm64/configs/gki_defconfig` on top of the upstream config:
 
-1. **解锁 Bootloader**：请确保设备已完成 Bootloader 解锁。
-2. **准备 Recovery**：建议使用较新的 `TWRP` 或 `OrangeFox Recovery`。
-3. **刷入内核**：从本项目 [Releases 页面](https://github.com/Picters/android_kernel_xiaomi_sm8850_nethunter/releases) 下载对应版本，并在 Recovery 中刷入内核 `zip` 包。
-4. **仅 LKM 版本需要：修补 `init_boot`**
-   使用前请先备份当前设备的 `init_boot.img`，再通过 KernelSU Manager App 选择并修补该镜像，随后使用 Fastboot 或 Recovery 将修补后的镜像刷入 `init_boot` 分区。
-5. **重启设备**：完成刷入后重启系统并确认功能状态。
+**Wi-Fi adapters (monitor mode / packet injection capable)**
+- `CONFIG_CFG80211`, `CONFIG_CFG80211_WEXT`, `CONFIG_MAC80211` — core wireless stack required by the drivers below.
+- `CONFIG_ATH9K_HTC` — Atheros AR9271-based USB adapters (e.g. Alfa AWUS036NHA, TP-Link TL-WN722N v1).
+- `CONFIG_RTL8187` — Realtek RTL8187L-based USB adapters (e.g. older Alfa AWUS036H).
 
-## 下载
+**USB Mass Storage & File Systems**
+- `CONFIG_USB_CONFIGFS_MASS_STORAGE`, `CONFIG_USB_STORAGE`, `CONFIG_USB_UAS` — Enables core USB mass storage and USB Attached SCSI (UAS) capabilities for mounting high-speed external drives.
+- `CONFIG_NTFS3_FS`, `CONFIG_EXFAT_FS`, `CONFIG_VFAT_FS` — Adds robust, native read/write filesystem support for modern USB flash drives and external hard disks.
 
-所有最新构建版本均发布于 [**Releases 页面**](https://github.com/Picters/android_kernel_xiaomi_sm8850_nethunter/releases)。
+**Serial / debug hardware**
+- `CONFIG_USB_SERIAL_CP210X` — Silicon Labs CP210x USB-to-serial devices, commonly used by GPS dongles, HackRF companion boards, and Arduino-based tools.
 
-## 反馈与支持
+**CAN bus (automotive hacking)**
+- `CONFIG_CAN_GS_USB` — Geschwister Schneider / CANtact-compatible USB-CAN adapters, used with SocketCAN tooling.
 
-如需获取使用交流、问题反馈或发布通知，可加入 [Telegram 交流群](https://t.me/kokubanchat)。
+**USB networking**
+- `CONFIG_USB_NET_CDC_SUBSET` — USB Ethernet devices under the CDC subset class.
+- `CONFIG_USB_NET_RNDIS_HOST` — RNDIS-based USB tethering/network devices.
+- `CONFIG_NET_SLIP` — SLIP (Serial Line IP) tunneling over serial links.
 
-## 免责声明
+**Diagnostics**
+- `CONFIG_PACKET_DIAG` — raw `AF_PACKET` socket introspection (used by tools that inspect low-level network sockets, e.g. via `ss`).
 
-刷机有风险，操作需谨慎。在进行任何操作前，请务必完整备份您的个人数据。因刷入此内核而导致的任何设备损坏或数据丢失，本人概不负责。
-
-
-
-# Kokuban Kernel for Xiaomi 17 Series
-
-<p align="center">
-<img src="https://raw.githubusercontent.com/YuzakiKokuban/Kokuban_Kernel_CI_Center/main/docs/kokuban_logo.png" alt="Logo" width="150">
-</p>
-
-<p align="center">
-<a href="https://github.com/Picters/android_kernel_xiaomi_sm8850_nethunter/releases"><img src="https://img.shields.io/github/v/release/Picters/android_kernel_xiaomi_sm8850_nethunter?style=for-the-badge&logo=github&color=blue" alt="GitHub release"></a>
-<a href="https://t.me/kokubanchat"><img src="https://img.shields.io/badge/Telegram-Chat-blue.svg?style=for-the-badge&logo=telegram" alt="Telegram"></a>
-</p>
-
-This is a custom kernel project for the **Xiaomi 17 Series**, built with a focus on stability, performance tuning, and day-to-day usability. The project currently maintains two release tracks, `LKM` and `ReSukiSU`, to serve both clean setups and advanced power-user workflows.
-
-## Overview
-
-* **Performance Tuned**: Includes targeted scheduling and performance optimizations for smoother daily use and gaming.
-* **Streamlined Release Model**: Focuses on the actively maintained `LKM` and `ReSukiSU` variants to keep maintenance predictable and transparent.
-* **Optional Feature Integration**: Matching builds may include `SuSFS` and `BBG`, with `SuSFS` enabled only on `ReSukiSU` releases.
-* **Version Identifier**: `-android16-Kokuban-SilverWolf`
+**Media / SDR framework**
+- `CONFIG_MEDIA_DIGITAL_TV_SUPPORT` — enables the DVB/digital-TV subsystem framework required by RTL-SDR-adjacent tuner drivers. Note: this enables the framework only; a matching tuner driver (e.g. `CONFIG_DVB_USB_RTL28XXU`) is required separately for actual RTL-SDR dongle detection.
 
 ## Release Variants
 
 * **LKM (Loadable Kernel Module)**
-  * Does not include a built-in root solution and is intended for users who prefer a cleaner kernel environment.
+  * No built-in root solution; intended for users who prefer a cleaner kernel environment.
   * If root access is required, patch and flash the device `init_boot` image manually through the KernelSU Manager App.
 
 * **ReSuki (ReSukiSU)**
   * Ships with ReSukiSU integration and supports advanced capabilities such as `SUSFS` and `KPM`.
   * Recommended for users who need module extensibility, root hiding, or other advanced workflows.
 
-> This project no longer maintains the legacy built-in `KSU/MKSU` branch model.
+> This project does not maintain the legacy built-in `KSU/MKSU` branch model, consistent with upstream.
 
 ## Installation
 
-1. **Unlock the Bootloader**: Make sure the device bootloader is already unlocked.
-2. **Prepare a Recovery Environment**: A recent version of `TWRP` or `OrangeFox Recovery` is recommended.
-3. **Flash the Kernel**: Download the appropriate package from the [Releases page](https://github.com/Picters/android_kernel_xiaomi_sm8850_nethunter/releases) and flash the kernel `zip` through Recovery.
-4. **LKM Builds Only: Patch `init_boot`**
-   Back up your current `init_boot.img`, patch it with the KernelSU Manager App, and flash the patched image back to the `init_boot` partition using Fastboot or Recovery.
-5. **Reboot the Device**: Restart the system and verify the kernel is running as expected.
+1. **Unlock the Bootloader** — make sure the device bootloader is already unlocked.
+2. **Prepare a Recovery Environment** — a recent version of `TWRP` or `OrangeFox Recovery` is recommended.
+3. **Flash the Kernel** — download the appropriate package from the [Releases page](https://github.com/Picters/android_kernel_xiaomi_sm8850_nethunter/releases) and flash the kernel `zip` through Recovery.
+4. **LKM Builds Only: Patch `init_boot`** — back up your current `init_boot.img`, patch it with the KernelSU Manager App, then flash the patched image back to the `init_boot` partition using Fastboot or Recovery.
+5. **Reboot the Device** — restart and verify the kernel is running as expected.
 
 ## Downloads
 
-All current builds are published on the [**Releases Page**](https://github.com/Picters/android_kernel_xiaomi_sm8850_nethunter/releases).
+All builds from this fork are published on the [Releases page](https://github.com/Picters/android_kernel_xiaomi_sm8850_nethunter/releases).
 
-## Support
+## Credits
 
-For release notifications, discussion, or general support, join the [Telegram group](https://t.me/kokubanchat).
+- Original kernel, base tuning, and CI infrastructure: [YuzakiKokuban](https://github.com/YuzakiKokuban)
+- NetHunter driver configuration additions: Picters
 
 ## Disclaimer
 
-Flashing custom software carries inherent risks. Please make a full backup of your personal data before proceeding. I am not responsible for any damage to your device or data loss that may occur as a result of flashing this kernel.
-
-
-<p align="center">
-<a href="https://www.paypal.me/LangQin280">☕ Support Me</a>
-</p>
+Flashing custom kernels carries inherent risk. Back up your personal data before proceeding. Neither the original author nor the maintainer of this fork is responsible for any device damage or data loss resulting from the use of this kernel.
