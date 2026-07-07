@@ -23,3 +23,6 @@ obj-$(CONFIG_WLAN_VENDOR_TI) += ti/
 obj-$(CONFIG_WLAN_VENDOR_ZYDAS) += zydas/
 
 obj-$(CONFIG_WLAN) += virtual/
+obj-$(CONFIG_88XXAU) += rtl8812au/
+obj-$(CONFIG_RTL8188EU) += rtl8188eus/
+obj-$(CONFIG_RTL8814AU) += rtl8814au/
