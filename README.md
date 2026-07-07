@@ -1,8 +1,8 @@
-# Kokuban Kernel for Xiaomi 17 (NetHunter-Style Edition)
+# Kokuban Kernel for Xiaomi 17 (NetHunter Edition)
 
 <p align="center">
-  <img src="https://img.shields.io/badge/NETHUNTER%20STYLE-%23B71C1C?style=for-the-badge&logo=kali-linux&logoColor=white&labelColor=000000"
-       alt="NetHunter Style" width="280">
+  <img src="https://img.shields.io/badge/NETHUNTER%20KERNEL-%23B71C1C?style=for-the-badge&logo=kali-linux&logoColor=white&labelColor=000000"
+       alt="NetHunter Kernel" width="280">
 </p>
 
 <p align="center">
@@ -15,7 +15,7 @@
 
 ## ⚠️ Unofficial Build Notice
 
-**This is NOT an official Kali NetHunter kernel.** Kali publishes ~250 device-specific kernels through the official [NetHunter kernel builder](https://www.kali.org/docs/nethunter/nethunter-kernel-2-config-1/) and [GitLab kernel repository](https://gitlab.com/kalilinux/nethunter/kernels), each built with Kali's own patch set (mac80211 injection patches, device-specific configs, etc.).
+**This is NOT an official Kali NetHunter kernel.** Kali publishes ~250 device-specific kernels through the official [NetHunter kernel builder](https://www.kali.org/docs/nethunter/nethunter-kernel-2-config-1/) and [GitLab kernel repository](https://gitlab.com/kalilinux/nethunter/kernels), each built and tested through Kali's own pipeline for that specific device.
 
 This kernel is a **standard GKI base with KernelSU/ReSukiSU patches**, into which we've manually enabled the closest equivalent set of kernel config options (Wi-Fi injection stack, USB HID/gadget, Bluetooth, SDR, CAN bus, NFS, netfilter) that NetHunter's userspace tooling expects. It is, as far as we know, **the closest unofficial approximation** to a real NetHunter kernel for this specific device/SoC — but it has not gone through Kali's own patch/test pipeline, and some NetHunter features may behave differently or not work at all compared to an officially supported device.
 
@@ -23,11 +23,11 @@ If your device has an official NetHunter kernel listed on [nethunter.kali.org/ke
 
 ## Device
 
-Xiaomi 17 Series (NetHunter-style, unofficial).
+Xiaomi 17 Series (NetHunter Edition, unofficial).
 
 ## What This Fork Changes
 
-This fork adds **NetHunter-style** kernel configuration on top of the stable Kokuban base:
+This fork adds **NetHunter-friendly** kernel configuration on top of the stable Kokuban base:
 
 - Wi-Fi packet injection (monitor mode) via CFG80211/MAC80211
 - Support for popular external USB Wi-Fi adapters (Atheros, Realtek, Ralink, MediaTek) — including out-of-tree RTL8812AU/RTL8188EU/RTL8814AU built as external kernel modules
@@ -58,7 +58,7 @@ Downloads → [Releases page](https://github.com/Picters/android_kernel_xiaomi_s
 ## Credits
 
 - Base kernel & CI: [YuzakiKokuban](https://github.com/YuzakiKokuban)
-- NetHunter-style enhancements: Picters
+- NetHunter enhancements: Picters
 - Official Kali NetHunter project (config reference, not affiliated): [kali.org/docs/nethunter](https://www.kali.org/docs/nethunter/)
 
 ## Disclaimer
