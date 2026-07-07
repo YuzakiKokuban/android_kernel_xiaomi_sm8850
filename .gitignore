@@ -108,6 +108,7 @@ modules.order
 !.editorconfig
 !.get_maintainer.ignore
 !.gitattributes
+!.gitmodules
 !.gitignore
 !.kunitconfig
 !.mailmap
