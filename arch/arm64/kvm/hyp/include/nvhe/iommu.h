@@ -8,7 +8,7 @@
 #include <kvm/iommu.h>
 
 #include <nvhe/alloc_mgt.h>
-#include <nvhe/pkvm.h>
+#include <nvhe/spinlock.h>
 
 /* alloc/free from atomic pool. */
 void *kvm_iommu_donate_pages_atomic(u8 order);
@@ -27,7 +27,16 @@ size_t kvm_iommu_map_pages(pkvm_handle_t domain_id,
 			   size_t pgcount, int prot, unsigned long *mapped);
 size_t kvm_iommu_unmap_pages(pkvm_handle_t domain_id, unsigned long iova,
 			     size_t pgsize, size_t pgcount);
+int kvm_iommu_attach_dev_nested(pkvm_handle_t iommu_id, pkvm_handle_t domain_id, u32 endpoint_id,
+				u32 pasid, unsigned long flags, void *s1_desc_hva,
+				size_t s1_desc_size);
+int kvm_iommu_detach_dev_nested(pkvm_handle_t iommu_id, pkvm_handle_t domain_id, u32 endpoint_id,
+				u32 pasid);
+int kvm_iommu_iotlb_inv_nested_domain(pkvm_handle_t domain_id, unsigned long iova, size_t size,
+				      size_t granule, bool leaf);
+int kvm_iommu_nested_cfg_sync(pkvm_handle_t iommu_id, void *cmd_desc, size_t cmd_desc_size);
 phys_addr_t kvm_iommu_iova_to_phys(pkvm_handle_t domain_id, unsigned long iova);
+int kvm_iommu_iotlb_sync_map(pkvm_handle_t domain_id, unsigned long iova, size_t size);
 bool kvm_iommu_host_dabt_handler(struct kvm_cpu_context *host_ctxt, u64 esr, u64 addr);
 size_t kvm_iommu_map_sg(pkvm_handle_t domain, unsigned long iova, struct kvm_iommu_sg *sg,
 			unsigned int nent, unsigned int prot);
@@ -48,6 +57,7 @@ int kvm_iommu_snapshot_host_stage2(struct kvm_hyp_iommu_domain *domain);
 
 int kvm_iommu_dev_block_dma(pkvm_handle_t iommu_id, u32 endpoint_id, bool host_to_guest);
 
+struct pkvm_hyp_vm;
 int kvm_iommu_force_free_domain(pkvm_handle_t domain_id, struct pkvm_hyp_vm *vm);
 int kvm_iommu_id_to_token(pkvm_handle_t smmu_id, u64 *out_token);
 
@@ -78,11 +88,23 @@ struct kvm_iommu_ops {
 	int (*dev_block_dma)(struct kvm_hyp_iommu *iommu, u32 endpoint_id,
 			     bool is_host_to_guest);
 	int (*get_iommu_token_by_id)(pkvm_handle_t smmu_id, u64 *out_token);
-	ANDROID_KABI_RESERVE(1);
-	ANDROID_KABI_RESERVE(2);
-	ANDROID_KABI_RESERVE(3);
-	ANDROID_KABI_RESERVE(4);
-	ANDROID_KABI_RESERVE(5);
+	ANDROID_KABI_USE(1, int (*iotlb_sync_map)(struct kvm_hyp_iommu_domain *domain,
+						  unsigned long iova, size_t size));
+	ANDROID_KABI_USE(2, int (*attach_dev_nested)(struct kvm_hyp_iommu *iommu,
+						     struct kvm_hyp_iommu_domain *domain,
+						     struct kvm_hyp_iommu_domain *s2_domain,
+						     u32 endpoint_id, u32 pasid,
+						     unsigned long flags, void *s1_desc,
+						     size_t s1_desc_size));
+	ANDROID_KABI_USE(3, int (*detach_dev_nested)(struct kvm_hyp_iommu *iommu,
+						     struct kvm_hyp_iommu_domain *domain,
+						     struct kvm_hyp_iommu_domain *s2_domain,
+						     u32 endpoint_id, u32 pasid));
+	ANDROID_KABI_USE(4, void (*iotlb_inv_nested_domain)(struct kvm_hyp_iommu_domain *domain,
+							    unsigned long iova, size_t size,
+							    size_t granule, bool leaf));
+	ANDROID_KABI_USE(5, int (*nested_cfg_sync)(struct kvm_hyp_iommu *iommu, void *cmd_desc,
+						   size_t cmd_desc_size));
 	ANDROID_KABI_RESERVE(6);
 	ANDROID_KABI_RESERVE(7);
 	ANDROID_KABI_RESERVE(8);
@@ -120,6 +142,8 @@ static inline void kvm_iommu_unlock(struct kvm_hyp_iommu *iommu)
 {
 	hyp_spin_unlock(kvm_iommu_get_lock(iommu));
 }
+
+int kvm_iommu_request_hyp_alloc(void);
 
 extern struct hyp_mgt_allocator_ops kvm_iommu_allocator_ops;
 

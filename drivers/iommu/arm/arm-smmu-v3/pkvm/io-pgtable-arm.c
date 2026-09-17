@@ -106,6 +106,7 @@ struct io_pgtable *kvm_arm_io_pgtable_alloc(struct io_pgtable_cfg *cfg,
 
 	data = hyp_alloc(sizeof(*data));
 	if (!data) {
+		kvm_iommu_request_hyp_alloc();
 		*out_ret = hyp_alloc_errno();
 		return NULL;
 	}

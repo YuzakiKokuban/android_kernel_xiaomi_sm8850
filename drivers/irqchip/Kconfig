@@ -71,6 +71,7 @@ config ARM_VIC_NR
 
 config IRQ_MSI_LIB
 	bool
+	select GENERIC_MSI_IRQ
 
 config ARMADA_370_XP_IRQ
 	bool
@@ -505,6 +506,7 @@ config IMX_MU_MSI
 	tristate "i.MX MU used as MSI controller"
 	depends on OF && HAS_IOMEM
 	depends on ARCH_MXC || COMPILE_TEST
+	depends on ARM || ARM64
 	default m if ARCH_MXC
 	select IRQ_DOMAIN
 	select IRQ_DOMAIN_HIERARCHY
@@ -701,6 +703,12 @@ config MST_IRQ
 	select IRQ_DOMAIN_HIERARCHY
 	help
 	  Support MStar Interrupt Controller.
+
+config MTK_IRQ
+	bool "MediaTek interrupt controller"
+	default ARCH_MEDIATEK
+	help
+	  Support for CIRQ and SYSIRQ interrupt controller in the MediaTek SoC.
 
 config WPCM450_AIC
 	bool "Nuvoton WPCM450 Advanced Interrupt Controller"

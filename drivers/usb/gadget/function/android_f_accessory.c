@@ -45,6 +45,12 @@
 #define TX_REQ_MAX 4
 #define RX_REQ_MAX 2
 
+/* Safe upper bound for a HID report descriptor*/
+#define MAX_HID_DESC_SIZE 4096
+
+/* Maximum number of concurrent AOA‑HID devices*/
+#define MAX_HID_DEVICES 32
+
 struct acc_hid_dev {
 	struct list_head list;
 	struct hid_device *hid;
@@ -499,7 +505,7 @@ static void acc_complete_send_hid_event(struct usb_ep *ep,
 		return;
 	}
 
-	hid_report_raw_event(hid->hid, HID_INPUT_REPORT, req->buf, length, 1);
+	__hid_report_raw_event(hid->hid, HID_INPUT_REPORT, req->buf, length, length, 1);
 }
 
 static int acc_hid_parse(struct hid_device *hid)
@@ -596,8 +602,12 @@ static int acc_register_hid(struct acc_dev *dev, int id, int desc_length)
 	struct acc_hid_dev *hid;
 	unsigned long flags;
 
-	/* report descriptor length must be > 0 */
-	if (desc_length <= 0)
+	/*
+	 * Report descriptor length must be > 0 and not exceed the maximum size.
+	 * Device ID must be > 0 and within the allowed range.
+	 */
+	if (desc_length <= 0 || desc_length > MAX_HID_DESC_SIZE ||
+			id <= 0 || id > MAX_HID_DEVICES)
 		return -EINVAL;
 
 	spin_lock_irqsave(&dev->lock, flags);

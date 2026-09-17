@@ -922,6 +922,9 @@
   of_get_ethdev_address
   of_platform_populate
   __skb_pad
+  ptp_clock_index
+  ptp_clock_register
+  ptp_clock_unregister
 
 # required by bcm-phy-lib.ko
   ethnl_cable_test_fault_length_with_src
@@ -1377,6 +1380,10 @@
   gpiod_remove_lookup_table
   __of_get_address
   spi_finalize_current_transfer
+
+# required by pinctrl_bcm2835.ko
+  gpiochip_request_own_desc
+  gpiochip_free_own_desc
 
 # TODO: external drivers
 

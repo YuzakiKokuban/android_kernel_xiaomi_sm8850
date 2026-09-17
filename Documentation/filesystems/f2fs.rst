@@ -210,6 +210,7 @@ fault_type=%d		 Support configuring fault injection type, should be
 			 FAULT_BLKADDR_CONSISTENCE        0x000080000
 			 FAULT_NO_SEGMENT                 0x000100000
 			 FAULT_INCONSISTENT_FOOTER        0x000200000
+			 FAULT_TIMEOUT                    0x000400000 (1000ms)
 			 ===========================      ===========
 mode=%s			 Control block allocation mode which supports "adaptive"
 			 and "lfs". In "lfs" mode, there should be no random
@@ -239,9 +240,9 @@ usrjquota=<file>	 Appoint specified file and type during mount, so that quota
 grpjquota=<file>	 information can be properly updated during recovery flow,
 prjjquota=<file>	 <quota file>: must be in root directory;
 jqfmt=<quota type>	 <quota type>: [vfsold,vfsv0,vfsv1].
-offusrjquota		 Turn off user journalled quota.
-offgrpjquota		 Turn off group journalled quota.
-offprjjquota		 Turn off project journalled quota.
+usrjquota=		 Turn off user journalled quota.
+grpjquota=		 Turn off group journalled quota.
+prjjquota=		 Turn off project journalled quota.
 quota			 Enable plain user disk quota accounting.
 noquota			 Disable all plain disk quota option.
 alloc_mode=%s		 Adjust block allocation policy, which supports "reuse"
@@ -944,15 +945,15 @@ target file and the timing. The user can do manual compression/decompression on 
 compression enabled files using F2FS_IOC_DECOMPRESS_FILE and F2FS_IOC_COMPRESS_FILE
 ioctls like the below.
 
-To decompress a file,
+To decompress a file::
 
-fd = open(filename, O_WRONLY, 0);
-ret = ioctl(fd, F2FS_IOC_DECOMPRESS_FILE);
+  fd = open(filename, O_WRONLY, 0);
+  ret = ioctl(fd, F2FS_IOC_DECOMPRESS_FILE);
 
-To compress a file,
+To compress a file::
 
-fd = open(filename, O_WRONLY, 0);
-ret = ioctl(fd, F2FS_IOC_COMPRESS_FILE);
+  fd = open(filename, O_WRONLY, 0);
+  ret = ioctl(fd, F2FS_IOC_COMPRESS_FILE);
 
 NVMe Zoned Namespace devices
 ----------------------------
@@ -982,33 +983,107 @@ reserved and used by another filesystem or for different purposes. Once that
 external usage is complete, the device aliasing file can be deleted, releasing
 the reserved space back to F2FS for its own use.
 
-<use-case>
+.. code-block::
 
-# ls /dev/vd*
-/dev/vdb (32GB) /dev/vdc (32GB)
-# mkfs.ext4 /dev/vdc
-# mkfs.f2fs -c /dev/vdc@vdc.file /dev/vdb
-# mount /dev/vdb /mnt/f2fs
-# ls -l /mnt/f2fs
-vdc.file
-# df -h
-/dev/vdb                            64G   33G   32G  52% /mnt/f2fs
+   # ls /dev/vd*
+   /dev/vdb (32GB) /dev/vdc (32GB)
+   # mkfs.ext4 /dev/vdc
+   # mkfs.f2fs -c /dev/vdc@vdc.file /dev/vdb
+   # mount /dev/vdb /mnt/f2fs
+   # ls -l /mnt/f2fs
+   vdc.file
+   # df -h
+   /dev/vdb                            64G   33G   32G  52% /mnt/f2fs
 
-# mount -o loop /dev/vdc /mnt/ext4
-# df -h
-/dev/vdb                            64G   33G   32G  52% /mnt/f2fs
-/dev/loop7                          32G   24K   30G   1% /mnt/ext4
-# umount /mnt/ext4
+   # mount -o loop /dev/vdc /mnt/ext4
+   # df -h
+   /dev/vdb                            64G   33G   32G  52% /mnt/f2fs
+   /dev/loop7                          32G   24K   30G   1% /mnt/ext4
+   # umount /mnt/ext4
 
-# f2fs_io getflags /mnt/f2fs/vdc.file
-get a flag on /mnt/f2fs/vdc.file ret=0, flags=nocow(pinned),immutable
-# f2fs_io setflags noimmutable /mnt/f2fs/vdc.file
-get a flag on noimmutable ret=0, flags=800010
-set a flag on /mnt/f2fs/vdc.file ret=0, flags=noimmutable
-# rm /mnt/f2fs/vdc.file
-# df -h
-/dev/vdb                            64G  753M   64G   2% /mnt/f2fs
+   # f2fs_io getflags /mnt/f2fs/vdc.file
+   get a flag on /mnt/f2fs/vdc.file ret=0, flags=nocow(pinned),immutable
+   # f2fs_io setflags noimmutable /mnt/f2fs/vdc.file
+   get a flag on noimmutable ret=0, flags=800010
+   set a flag on /mnt/f2fs/vdc.file ret=0, flags=noimmutable
+   # rm /mnt/f2fs/vdc.file
+   # df -h
+   /dev/vdb                            64G  753M   64G   2% /mnt/f2fs
 
 So, the key idea is, user can do any file operations on /dev/vdc, and
 reclaim the space after the use, while the space is counted as /data.
 That doesn't require modifying partition size and filesystem format.
+
+Per-file Read-Only Large Folio Support
+--------------------------------------
+
+F2FS implements large folio support on the read path to leverage high-order
+page allocation for significant performance gains. To minimize code complexity,
+this support is currently excluded from the write path, which requires handling
+complex optimizations such as compression and block allocation modes.
+
+This optional feature is triggered by two mechanisms: the file's immutable bit
+or a specific xattr flag. In both cases, F2FS ensures data integrity by
+restricting the file to a read-only state while large folios are active.
+
+1. Immutable Bit Approach:
+Triggered when the FS_IMMUTABLE_FL is set. This is a strict enforcement
+where the file cannot be modified at all until the bit is cleared and
+the cached inode is dropped.
+
+.. code-block::
+
+   # f2fs_io setflags immutable /data/testfile_read_seq
+
+   /* flush and reload the inode to enable the large folio */
+   # sync && echo 3 > /proc/sys/vm/drop_caches
+
+   /* mmap(MAP_POPULATE) + mlock() */
+   # f2fs_io read 128 0 1024 mmap 1 0 /data/testfile_read_seq
+
+   /* mmap() + fadvise(POSIX_FADV_WILLNEED) + mlock() */
+   # f2fs_io read 128 0 1024 fadvise 1 0 /data/testfile_read_seq
+
+   /* mmap() + mlock2(MLOCK_ONFAULT) + madvise(MADV_POPULATE_READ) */
+   # f2fs_io read 128 0 1024 madvise 1 0 /data/testfile_read_seq
+
+   # f2fs_io clearflags immutable /data/testfile_read_seq
+
+   # f2fs_io write 1 0 1 zero buffered /data/testfile_read_seq
+   Failed to open /mnt/test/test: Operation not supported
+
+   /* flush and reload the inode to disable the large folio */
+   # sync && echo 3 > /proc/sys/vm/drop_caches
+
+   # f2fs_io write 1 0 1 zero buffered /data/testfile_read_seq
+   Written 4096 bytes with pattern = zero, total_time = 29 us, max_latency = 28 us
+
+   # rm /data/testfile_read_seq
+
+2. XATTR fadvise Approach:
+A more flexible registration via extended attributes.
+
+.. code-block::
+
+    enum {
+        F2FS_XATTR_FADV_LARGEFOLIO,
+    };
+    unsigned int value = BIT(F2FS_XATTR_FADV_LARGEFOLIO);
+
+    /* Registers the inode number for large folio support in the subsystem.*/
+    # setxattr(file, "user.fadvise", &value, sizeof(unsigned int), 0)
+
+    /* The file must be made Read-Only to transition into the large folio path. */
+    # fchmod(0400, fd)
+
+    /* clean up dirty inode state. */
+    # fsync(fd)
+
+    /* Drop the inode cache.
+    # close(fd)
+
+    /* f2fs_iget() instantiates the inode with large folio support.*/
+    # open()
+
+    /* Returns -EOPNOTSUPP or error to protect the large folio cache.*/
+    # open(WRITE), mkwrite on mmap, or chmod(WRITE)

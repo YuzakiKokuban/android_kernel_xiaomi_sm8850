@@ -50,6 +50,7 @@
 #include <linux/netfilter_ipv4.h>
 #include <net/inet_ecn.h>
 #include <net/l3mdev.h>
+#include <trace/hooks/net.h>
 
 /* NOTE. Logic of IP defragmentation is parallel to corresponding IPv6
  * code now. If you change something here, _PLEASE_ update ipv6/reassembly.c
@@ -322,6 +323,8 @@ static int ip_frag_queue(struct ipq *qp, struct sk_buff *skb)
 			goto discard_qp;
 		qp->q.flags |= INET_FRAG_LAST_IN;
 		qp->q.len = end;
+
+		trace_android_vh_reasm_timer_adjust(&qp->q, skb);
 	} else {
 		if (end&7) {
 			end &= ~7;
@@ -488,7 +491,7 @@ out_fail:
 /* Process an incoming IP datagram fragment. */
 int ip_defrag(struct net *net, struct sk_buff *skb, u32 user)
 {
-	struct net_device *dev = skb->dev ? : skb_dst(skb)->dev;
+	struct net_device *dev = skb->dev ? : skb_dst_dev(skb);
 	int vif = l3mdev_master_ifindex_rcu(dev);
 	struct ipq *qp;
 

@@ -24,6 +24,7 @@
 #include <linux/poll.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
+#include <trace/hooks/vb2.h>
 
 #include <media/v4l2-common.h>
 #include <media/v4l2-dev.h>
@@ -32,6 +33,9 @@
 #include <media/v4l2-fh.h>
 
 #include <media/videobuf2-v4l2.h>
+
+#include <linux/android_kabi.h>
+ANDROID_KABI_DECLONLY(trace_eval_map);
 
 static int debug;
 module_param(debug, int, 0644);
@@ -219,6 +223,9 @@ static int vb2_fill_vb2_v4l2_buffer(struct vb2_buffer *vb, struct v4l2_buffer *b
 					b->m.planes[plane].m.fd;
 				planes[plane].length =
 					b->m.planes[plane].length;
+
+				trace_android_vh_vb2_plane_fill_v4l2_plane(
+					&planes[plane], &b->m.planes[plane]);
 			}
 			break;
 		default:
@@ -1014,6 +1021,11 @@ int vb2_ioctl_remove_bufs(struct file *file, void *priv,
 
 	if (vb2_queue_is_busy(vdev->queue, file))
 		return -EBUSY;
+
+	if (vb2_fileio_is_active(vdev->queue)) {
+		dprintk(vdev->queue, 1, "file io in progress\n");
+		return -EBUSY;
+	}
 
 	return vb2_core_remove_bufs(vdev->queue, d->index, d->count);
 }

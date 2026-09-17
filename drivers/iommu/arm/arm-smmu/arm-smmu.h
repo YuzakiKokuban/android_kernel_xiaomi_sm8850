@@ -535,7 +535,14 @@ static inline void arm_smmu_writeq(struct arm_smmu_device *smmu, int page,
 	arm_smmu_writeq((s), ARM_SMMU_CB((s), (n)), (o), (v))
 
 struct arm_smmu_device *arm_smmu_impl_init(struct arm_smmu_device *smmu);
+#if IS_ENABLED(CONFIG_ARM_SMMU_NVIDIA)
 struct arm_smmu_device *nvidia_smmu_impl_init(struct arm_smmu_device *smmu);
+#else
+static inline struct arm_smmu_device *nvidia_smmu_impl_init(struct arm_smmu_device *smmu)
+{
+	return smmu;
+}
+#endif
 struct arm_smmu_device *qcom_smmu_impl_init(struct arm_smmu_device *smmu);
 
 void arm_smmu_write_context_bank(struct arm_smmu_device *smmu, int idx);

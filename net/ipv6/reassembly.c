@@ -57,6 +57,7 @@
 #include <net/addrconf.h>
 #include <net/ipv6_frag.h>
 #include <net/inet_ecn.h>
+#include <trace/hooks/net.h>
 
 static const char ip6_frag_cache_name[] = "ip6-frags";
 
@@ -153,6 +154,8 @@ static int ip6_frag_queue(struct frag_queue *fq, struct sk_buff *skb,
 			goto discard_fq;
 		fq->q.flags |= INET_FRAG_LAST_IN;
 		fq->q.len = end;
+
+		trace_android_vh_reasm_timer_adjust(&fq->q, skb);
 	} else {
 		/* Check if the fragment is rounded to 8 bytes.
 		 * Required by the RFC.

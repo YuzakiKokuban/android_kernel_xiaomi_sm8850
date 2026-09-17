@@ -71,6 +71,7 @@ impl Page {
     /// let page = Page::alloc_page(GFP_KERNEL | __GFP_ZERO)?;
     /// # Ok(()) }
     /// ```
+    #[inline]
     pub fn alloc_page(flags: Flags) -> Result<Self, AllocError> {
         // SAFETY: Depending on the value of `gfp_flags`, this call may sleep. Other than that, it
         // is always safe to call this method.
@@ -84,6 +85,12 @@ impl Page {
     /// Returns a raw pointer to the page.
     pub fn as_ptr(&self) -> *mut bindings::page {
         self.page.as_ptr()
+    }
+
+    /// Get the node id containing this page.
+    pub fn nid(&self) -> i32 {
+        // SAFETY: Always safe to call with a valid page.
+        unsafe { bindings::page_to_nid(self.as_ptr()) }
     }
 
     /// Runs a piece of code with this page mapped to an address.
@@ -253,6 +260,7 @@ impl Page {
 }
 
 impl Drop for Page {
+    #[inline]
     fn drop(&mut self) {
         // SAFETY: By the type invariants, we have ownership of the page and can free it.
         unsafe { bindings::__free_pages(self.page.as_ptr(), 0) };

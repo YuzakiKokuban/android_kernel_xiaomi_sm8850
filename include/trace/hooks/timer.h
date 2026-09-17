@@ -9,9 +9,21 @@
 
 #include <trace/hooks/vendor_hooks.h>
 
+struct task_struct;
+
+#define ANDROID_TIMER_SLACK_NANOSLEEP		0
+#define ANDROID_TIMER_SLACK_SCHED_HRTIMEOUT	1
+#define ANDROID_TIMER_SLACK_FUTEX		2
+#define ANDROID_TIMER_SLACK_TYPE_MAX		3
+
 DECLARE_HOOK(android_vh_timer_calc_index,
 	TP_PROTO(unsigned int lvl, unsigned long *expires),
 	TP_ARGS(lvl, expires));
+
+DECLARE_HOOK(android_vh_adjust_timer_slack,
+	TP_PROTO(struct task_struct *task, ktime_t *expires,
+		 u64 *delta_ns, int type),
+	TP_ARGS(task, expires, delta_ns, type));
 
 #endif /* _TRACE_HOOK_TIMER_H */
 /* This part must be outside protection */

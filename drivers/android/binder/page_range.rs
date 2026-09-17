@@ -14,15 +14,12 @@
 // The shrinker will use trylock methods because it locks them in a different order.
 
 use core::{
-    alloc::Layout,
     marker::PhantomPinned,
     mem::{size_of, size_of_val, MaybeUninit},
-    ptr::{self, NonNull},
+    ptr,
 };
 
 use kernel::{
-    alloc::allocator::Kmalloc,
-    alloc::Allocator,
     bindings,
     error::Result,
     ffi::{c_ulong, c_void},
@@ -47,7 +44,9 @@ pub(crate) struct Shrinker {
     list_lru: Opaque<bindings::list_lru>,
 }
 
+// SAFETY: The shrinker and list_lru are thread safe.
 unsafe impl Send for Shrinker {}
+// SAFETY: The shrinker and list_lru are thread safe.
 unsafe impl Sync for Shrinker {}
 
 impl Shrinker {
@@ -91,9 +90,9 @@ impl Shrinker {
         // SAFETY: We're about to register the shrinker, and these are the fields we need to
         // initialize. (All other fields are already zeroed.)
         unsafe {
-            ptr::addr_of_mut!((*shrinker).count_objects).write(Some(rust_shrink_count));
-            ptr::addr_of_mut!((*shrinker).scan_objects).write(Some(rust_shrink_scan));
-            ptr::addr_of_mut!((*shrinker).private_data).write(self.list_lru.get().cast());
+            (&raw mut (*shrinker).count_objects).write(Some(rust_shrink_count));
+            (&raw mut (*shrinker).scan_objects).write(Some(rust_shrink_scan));
+            (&raw mut (*shrinker).private_data).write(self.list_lru.get().cast());
         }
 
         // SAFETY: The new shrinker has been fully initialized, so we can register it.
@@ -145,6 +144,32 @@ pub(crate) struct ShrinkablePageRange {
     _pin: PhantomPinned,
 }
 
+// We do not define any ops. For now, used only to check identity of vmas.
+static BINDER_VM_OPS: bindings::vm_operations_struct =
+    // SAFETY: All zeros is valid value for `vm_operations_struct`.
+    unsafe { MaybeUninit::<bindings::vm_operations_struct>::zeroed().assume_init() };
+
+// To ensure that we do not accidentally install pages into or zap pages from the wrong vma, we
+// check its vm_ops and private data before using it.
+fn check_vma(vma: &virt::VmaRef, owner: *const ShrinkablePageRange) -> Option<&virt::VmaMixedMap> {
+    // SAFETY: Just reading the vm_ops pointer of any active vma is safe.
+    let vm_ops = unsafe { (*vma.as_ptr()).vm_ops };
+    if !ptr::eq(vm_ops, &BINDER_VM_OPS) {
+        return None;
+    }
+
+    // SAFETY: Reading the vm_private_data pointer of a binder-owned vma is safe.
+    let vm_private_data = unsafe { (*vma.as_ptr()).vm_private_data };
+    // The ShrinkablePageRange is only dropped when the Process is dropped, which only happens once
+    // the file's ->release handler is invoked, which means the ShrinkablePageRange outlives any
+    // VMA associated with it, so there can't be any false positives due to pointer reuse here.
+    if !ptr::eq(vm_private_data, owner.cast()) {
+        return None;
+    }
+
+    vma.as_mixedmap_vma()
+}
+
 struct Inner {
     /// Array of pages.
     ///
@@ -157,8 +182,8 @@ struct Inner {
     vma_addr: usize,
 }
 
-unsafe impl Send for ShrinkablePageRange {}
-unsafe impl Sync for ShrinkablePageRange {}
+// SAFETY: proper locking is in place for `Inner`
+unsafe impl Send for Inner {}
 
 type StableMmGuard =
     kernel::sync::lock::Guard<'static, (), kernel::sync::lock::mutex::MutexBackend>;
@@ -182,20 +207,10 @@ struct PageInfo {
 impl PageInfo {
     /// # Safety
     ///
-    /// The caller ensures that reading from `me.page` is ok.
-    unsafe fn has_page(me: *const PageInfo) -> bool {
-        // SAFETY: This pointer offset is in bounds.
-        let page = unsafe { ptr::addr_of!((*me).page) };
-
-        unsafe { (*page).is_some() }
-    }
-
-    /// # Safety
-    ///
     /// The caller ensures that writing to `me.page` is ok, and that the page is not currently set.
     unsafe fn set_page(me: *mut PageInfo, page: Page) {
         // SAFETY: This pointer offset is in bounds.
-        let ptr = unsafe { ptr::addr_of_mut!((*me).page) };
+        let ptr = unsafe { &raw mut (*me).page };
 
         // SAFETY: The pointer is valid for writing, so also valid for reading.
         if unsafe { (*ptr).is_some() } {
@@ -213,7 +228,7 @@ impl PageInfo {
     /// The caller ensures that reading from `me.page` is ok for the duration of 'a.
     unsafe fn get_page<'a>(me: *const PageInfo) -> Option<&'a Page> {
         // SAFETY: This pointer offset is in bounds.
-        let ptr = unsafe { ptr::addr_of!((*me).page) };
+        let ptr = unsafe { &raw const (*me).page };
 
         // SAFETY: The pointer is valid for reading.
         unsafe { (*ptr).as_ref() }
@@ -224,7 +239,7 @@ impl PageInfo {
     /// The caller ensures that writing to `me.page` is ok for the duration of 'a.
     unsafe fn take_page(me: *mut PageInfo) -> Option<Page> {
         // SAFETY: This pointer offset is in bounds.
-        let ptr = unsafe { ptr::addr_of_mut!((*me).page) };
+        let ptr = unsafe { &raw mut (*me).page };
 
         // SAFETY: The pointer is valid for reading.
         unsafe { (*ptr).take() }
@@ -234,24 +249,24 @@ impl PageInfo {
     ///
     /// # Safety
     ///
-    /// The pointer must be valid, and it must be the right shrinker.
-    unsafe fn list_lru_add(me: *mut PageInfo, shrinker: &'static Shrinker) {
+    /// The pointer must be valid, and it must be the right shrinker and nid.
+    unsafe fn list_lru_add(me: *mut PageInfo, nid: i32, shrinker: &'static Shrinker) {
         // SAFETY: This pointer offset is in bounds.
-        let lru_ptr = unsafe { ptr::addr_of_mut!((*me).lru) };
+        let lru_ptr = unsafe { &raw mut (*me).lru };
         // SAFETY: The lru pointer is valid, and we're not using it with any other lru list.
-        unsafe { bindings::list_lru_add_obj(shrinker.list_lru.get(), lru_ptr) };
+        unsafe { bindings::list_lru_add(shrinker.list_lru.get(), lru_ptr, nid, ptr::null_mut()) };
     }
 
     /// Remove this page from the lru list, if it is in the list.
     ///
     /// # Safety
     ///
-    /// The pointer must be valid, and it must be the right shrinker.
-    unsafe fn list_lru_del(me: *mut PageInfo, shrinker: &'static Shrinker) {
+    /// The pointer must be valid, and it must be the right shrinker and nid.
+    unsafe fn list_lru_del(me: *mut PageInfo, nid: i32, shrinker: &'static Shrinker) {
         // SAFETY: This pointer offset is in bounds.
-        let lru_ptr = unsafe { ptr::addr_of_mut!((*me).lru) };
+        let lru_ptr = unsafe { &raw mut (*me).lru };
         // SAFETY: The lru pointer is valid, and we're not using it with any other lru list.
-        unsafe { bindings::list_lru_del_obj(shrinker.list_lru.get(), lru_ptr) };
+        unsafe { bindings::list_lru_del(shrinker.list_lru.get(), lru_ptr, nid, ptr::null_mut()) };
     }
 }
 
@@ -282,7 +297,7 @@ impl ShrinkablePageRange {
     }
 
     /// Register a vma with this page range. Returns the size of the region.
-    pub(crate) fn register_with_vma(&self, vma: &virt::VmAreaNew) -> Result<usize> {
+    pub(crate) fn register_with_vma(&self, vma: &virt::VmaNew) -> Result<usize> {
         let num_bytes = usize::min(vma.end() - vma.start(), bindings::SZ_4M as usize);
         let num_pages = num_bytes >> PAGE_SHIFT;
 
@@ -295,20 +310,18 @@ impl ShrinkablePageRange {
             return Err(EINVAL);
         }
 
-        let layout = Layout::array::<PageInfo>(num_pages).map_err(|_| ENOMEM)?;
-        // SAFETY: The layout has non-zero size.
-        let pages = Kmalloc::alloc(layout, GFP_KERNEL)?.cast::<PageInfo>();
+        let mut pages = KVVec::<PageInfo>::with_capacity(num_pages, GFP_KERNEL)?;
 
         // SAFETY: This just initializes the pages array.
         unsafe {
             let self_ptr = self as *const ShrinkablePageRange;
             for i in 0..num_pages {
-                let info = pages.add(i).as_ptr();
-                ptr::addr_of_mut!((*info).range).write(self_ptr);
-                ptr::addr_of_mut!((*info).page).write(None);
-                let lru = ptr::addr_of_mut!((*info).lru);
-                ptr::addr_of_mut!((*lru).next).write(lru);
-                ptr::addr_of_mut!((*lru).prev).write(lru);
+                let info = pages.as_mut_ptr().add(i);
+                (&raw mut (*info).range).write(self_ptr);
+                (&raw mut (*info).page).write(None);
+                let lru = &raw mut (*info).lru;
+                (&raw mut (*lru).next).write(lru);
+                (&raw mut (*lru).prev).write(lru);
             }
         }
 
@@ -316,14 +329,24 @@ impl ShrinkablePageRange {
         if inner.size > 0 {
             pr_debug!("Failed to register with vma: already registered");
             drop(inner);
-            // SAFETY: The `pages` array was allocated with the same layout.
-            unsafe { Kmalloc::free(pages.cast(), layout) };
             return Err(EBUSY);
         }
 
-        inner.pages = pages.as_ptr();
+        inner.pages = pages.into_raw_parts().0;
         inner.size = num_pages;
         inner.vma_addr = vma.start();
+
+        // This pointer is only used for comparison - it's not dereferenced.
+        //
+        // SAFETY: We own the vma, and we don't use any methods on VmaNew that rely on
+        // `vm_private_data`.
+        unsafe {
+            (*vma.as_ptr()).vm_private_data = ptr::from_ref(self).cast_mut().cast::<c_void>()
+        };
+
+        // SAFETY: We own the vma, and we don't use any methods on VmaNew that rely on
+        // `vm_ops`.
+        unsafe { (*vma.as_ptr()).vm_ops = &BINDER_VM_OPS };
 
         Ok(num_pages)
     }
@@ -345,7 +368,7 @@ impl ShrinkablePageRange {
             let page_info = unsafe { inner.pages.add(i) };
 
             // SAFETY: The pointer is valid, and we hold the lock so reading from the page is okay.
-            if unsafe { PageInfo::has_page(page_info) } {
+            if let Some(page) = unsafe { PageInfo::get_page(page_info) } {
                 crate::trace::trace_alloc_lru_start(self.pid, i);
 
                 // Since we're going to use the page, we should remove it from the lru list so that
@@ -355,14 +378,15 @@ impl ShrinkablePageRange {
                 //
                 // The shrinker can't free the page between the check and this call to
                 // `list_lru_del` because we hold the lock.
-                unsafe { PageInfo::list_lru_del(page_info, self.shrinker) };
+                unsafe { PageInfo::list_lru_del(page_info, page.nid(), self.shrinker) };
 
                 crate::trace::trace_alloc_lru_end(self.pid, i);
             } else {
                 // We have to allocate a new page. Use the slow path.
                 drop(inner);
                 crate::trace::trace_alloc_page_start(self.pid, i);
-                match self.use_page_slow(i) {
+                // SAFETY: `i < end <= inner.size` so `i` is in bounds.
+                match unsafe { self.use_page_slow(i) } {
                     Ok(()) => {}
                     Err(err) => {
                         pr_warn!("Error in use_page_slow: {:?}", err);
@@ -384,7 +408,7 @@ impl ShrinkablePageRange {
     ///
     /// Assumes that `i` is in bounds.
     #[cold]
-    fn use_page_slow(&self, i: usize) -> Result<()> {
+    unsafe fn use_page_slow(&self, i: usize) -> Result<()> {
         let new_page = Page::alloc_page(GFP_KERNEL | __GFP_HIGHMEM | __GFP_ZERO)?;
 
         let mm_mutex = self.mm_lock.lock();
@@ -394,7 +418,7 @@ impl ShrinkablePageRange {
         let page_info = unsafe { inner.pages.add(i) };
 
         // SAFETY: The pointer is valid, and we hold the lock so reading from the page is okay.
-        if unsafe { PageInfo::has_page(page_info) } {
+        if let Some(page) = unsafe { PageInfo::get_page(page_info) } {
             // The page was already there, or someone else added the page while we didn't hold the
             // spinlock.
             //
@@ -402,7 +426,7 @@ impl ShrinkablePageRange {
             //
             // The shrinker can't free the page between the check and this call to
             // `list_lru_del` because we hold the lock.
-            unsafe { PageInfo::list_lru_del(page_info, self.shrinker) };
+            unsafe { PageInfo::list_lru_del(page_info, page.nid(), self.shrinker) };
             return Ok(());
         }
 
@@ -418,27 +442,30 @@ impl ShrinkablePageRange {
         // caller of `use_page_slow` becomes responsible for cleaning up the `mm`, which doesn't
         // happen until it returns to userspace. However, the caller might instead go to sleep and
         // wait for the owner of the `mm` to wake it up, which doesn't happen because it's in the
-        // middle of a shutdown process that wont complete until the `mm` is dropped. This can
+        // middle of a shutdown process that won't complete until the `mm` is dropped. This can
         // amount to a deadlock.
         //
         // Using `mmput_async` avoids this, because then the `mm` cleanup is instead queued to a
         // workqueue.
-        MmWithUser::into_mmput_async(self.mm.mmget_not_zero().ok_or(ESRCH)?)
-            .mmap_read_lock()
-            .vma_lookup(vma_addr)
-            .ok_or(ESRCH)?
-            .as_mixedmap_vma()
-            .ok_or(ESRCH)?
-            .vm_insert_page(user_page_addr, &new_page)
-            .inspect_err(|err| {
-                pr_warn!(
-                    "Failed to vm_insert_page({}): vma_addr:{} i:{} err:{:?}",
-                    user_page_addr,
-                    vma_addr,
-                    i,
-                    err
-                )
-            })?;
+        let mm = MmWithUser::into_mmput_async(self.mm.mmget_not_zero().ok_or(ESRCH)?);
+        {
+            let vma_read;
+            let mmap_read;
+            let vma = if let Some(ret) = mm.lock_vma_under_rcu(vma_addr) {
+                vma_read = ret;
+                check_vma(&vma_read, self)
+            } else {
+                mmap_read = mm.mmap_read_lock();
+                mmap_read
+                    .vma_lookup(vma_addr)
+                    .and_then(|vma| check_vma(vma, self))
+            };
+
+            match vma {
+                Some(vma) => vma.vm_insert_page(user_page_addr, &new_page)?,
+                None => return Err(ESRCH),
+            }
+        }
 
         let inner = self.lock.lock();
 
@@ -473,11 +500,11 @@ impl ShrinkablePageRange {
             let page_info = unsafe { inner.pages.add(i) };
 
             // SAFETY: Okay for reading since we have the lock.
-            if unsafe { PageInfo::has_page(page_info) } {
+            if let Some(page) = unsafe { PageInfo::get_page(page_info) } {
                 crate::trace::trace_free_lru_start(self.pid, i);
 
                 // SAFETY: The pointer is valid, and it's the right shrinker.
-                unsafe { PageInfo::list_lru_add(page_info, self.shrinker) };
+                unsafe { PageInfo::list_lru_add(page_info, page.nid(), self.shrinker) };
 
                 crate::trace::trace_free_lru_end(self.pid, i);
             }
@@ -497,10 +524,6 @@ impl ShrinkablePageRange {
             return Ok(());
         }
 
-        // SAFETY: The caller promises that the pages touched by this call are in use. It's only
-        // possible for a page to be in use if we have already been registered with a vma, and we
-        // only change the `pages` and `size` fields during registration with a vma, so there is no
-        // race when we read them here without taking the lock.
         let (pages, num_pages) = {
             let inner = self.lock.lock();
             (inner.pages, inner.size)
@@ -622,35 +645,34 @@ impl PinnedDrop for ShrinkablePageRange {
             return;
         }
 
+        // Note: This call is also necessary for the safety of `stable_trylock_mm`.
+        let mm_lock = self.mm_lock.lock();
+
         // This is the destructor, so unlike the other methods, we only need to worry about races
-        // with the shrinker here.
+        // with the shrinker here. Since we hold the `mm_lock`, we also can't race with the
+        // shrinker, and after this loop, the shrinker will not access any of our pages since we
+        // removed them from the lru list.
         for i in 0..size {
-            // SAFETY: The pointer is valid and it's the right shrinker.
-            unsafe { PageInfo::list_lru_del(pages.add(i), self.shrinker) };
-            // SAFETY: If the shrinker was going to free this page, then it would have taken it
-            // from the PageInfo before releasing the lru lock. Thus, the call to `list_lru_del`
-            // will either remove it before the shrinker can access it, or the shrinker will
-            // already have taken the page at this point.
-            unsafe { drop(PageInfo::take_page(pages.add(i))) };
+            // SAFETY: Loop is in-bounds of the size.
+            let p_ptr = unsafe { pages.add(i) };
+            // SAFETY: No other readers, so we can read.
+            if let Some(p) = unsafe { PageInfo::get_page(p_ptr) } {
+                // SAFETY: The pointer is valid and it's the right shrinker.
+                unsafe { PageInfo::list_lru_del(p_ptr, p.nid(), self.shrinker) };
+            }
         }
 
-        // Wait for users of the mutex to go away. This call is necessary for the safety of
-        // `stable_trylock_mm`.
-        drop(self.mm_lock.lock());
+        drop(mm_lock);
 
-        let Some(pages) = NonNull::new(pages) else {
-            return;
-        };
-
-        // SAFETY: This computation did not overflow when allocating the pages array, so it will
-        // not overflow this time.
-        let layout = unsafe { Layout::array::<PageInfo>(size).unwrap_unchecked() };
-
-        // SAFETY: The `pages` array was allocated with the same layout.
-        unsafe { Kmalloc::free(pages.cast(), layout) };
+        // SAFETY: `pages` was allocated as an `KVVec<PageInfo>` with capacity `size`. Furthermore,
+        // all `size` elements are initialized. Also, the array is no longer shared with the
+        // shrinker due to the above loop.
+        drop(unsafe { KVVec::from_raw_parts(pages, size, size) });
     }
 }
 
+/// # Safety
+/// Called by the shrinker.
 #[no_mangle]
 unsafe extern "C" fn rust_shrink_count(
     shrink: *mut bindings::shrinker,
@@ -662,6 +684,8 @@ unsafe extern "C" fn rust_shrink_count(
     unsafe { bindings::list_lru_count(list_lru) }
 }
 
+/// # Safety
+/// Called by the shrinker.
 #[no_mangle]
 unsafe extern "C" fn rust_shrink_scan(
     shrink: *mut bindings::shrinker,
@@ -673,18 +697,9 @@ unsafe extern "C" fn rust_shrink_scan(
     let nr_to_scan = unsafe { (*sc).nr_to_scan };
     // SAFETY: Accessing the lru list is okay. Just an FFI call.
     unsafe {
-        extern "C" {
-            fn rust_shrink_free_page_wrap(
-                item: *mut bindings::list_head,
-                list: *mut bindings::list_lru_one,
-                lock: *mut bindings::spinlock_t,
-                cb_arg: *mut kernel::ffi::c_void,
-            ) -> bindings::lru_status;
-        }
-
         bindings::list_lru_walk(
             list_lru,
-            Some(rust_shrink_free_page_wrap),
+            Some(bindings::rust_shrink_free_page_wrap),
             ptr::null_mut(),
             nr_to_scan,
         )
@@ -694,6 +709,8 @@ unsafe extern "C" fn rust_shrink_scan(
 const LRU_SKIP: bindings::lru_status = bindings::lru_status_LRU_SKIP;
 const LRU_REMOVED_ENTRY: bindings::lru_status = bindings::lru_status_LRU_REMOVED_RETRY;
 
+/// # Safety
+/// Called by the shrinker.
 #[no_mangle]
 unsafe extern "C" fn rust_shrink_free_page(
     item: *mut bindings::list_head,
@@ -706,14 +723,18 @@ unsafe extern "C" fn rust_shrink_free_page(
     let page;
     let page_index;
     let mm;
-    let mmap_read;
+    let vma_read;
     let mm_mutex;
     let vma_addr;
+    let range_ptr;
 
     {
-        // SAFETY: The `list_head` field is first in `PageInfo`.
+        // CAST: The `list_head` field is first in `PageInfo`.
         let info = item as *mut PageInfo;
-        let range = unsafe { &*((*info).range) };
+        // SAFETY: The `range` field of `PageInfo` is immutable.
+        range_ptr = unsafe { (*info).range };
+        // SAFETY: The `range` outlives its `PageInfo` values.
+        let range = unsafe { &*range_ptr };
 
         mm = match range.mm.mmget_not_zero() {
             Some(mm) => MmWithUser::into_mmput_async(mm),
@@ -725,14 +746,15 @@ unsafe extern "C" fn rust_shrink_free_page(
             None => return LRU_SKIP,
         };
 
-        mmap_read = match mm.mmap_read_trylock() {
-            Some(guard) => guard,
-            None => return LRU_SKIP,
-        };
-
         // We can't lock it normally here, since we hold the lru lock.
         let inner = match range.lock.try_lock() {
             Some(inner) => inner,
+            None => return LRU_SKIP,
+        };
+
+        vma_addr = inner.vma_addr;
+        vma_read = match mm.lock_vma_under_rcu(vma_addr) {
+            Some(guard) => guard,
             None => return LRU_SKIP,
         };
 
@@ -751,7 +773,6 @@ unsafe extern "C" fn rust_shrink_free_page(
         // `zap_page_range` before we release the mmap lock, so `use_page_slow` will not be able to
         // insert a new page until after our call to `zap_page_range`.
         page = unsafe { PageInfo::take_page(info) };
-        vma_addr = inner.vma_addr;
 
         crate::trace::trace_unmap_kernel_end(pid, page_index);
 
@@ -763,14 +784,14 @@ unsafe extern "C" fn rust_shrink_free_page(
     // SAFETY: The lru lock is locked when this method is called.
     unsafe { bindings::spin_unlock(lru_lock) };
 
-    if let Some(vma) = mmap_read.vma_lookup(vma_addr) {
+    if let Some(vma) = check_vma(&vma_read, range_ptr) {
         let user_page_addr = vma_addr + (page_index << PAGE_SHIFT);
         crate::trace::trace_unmap_user_start(pid, page_index);
         vma.zap_page_range_single(user_page_addr, PAGE_SIZE);
         crate::trace::trace_unmap_user_end(pid, page_index);
     }
 
-    drop(mmap_read);
+    drop(vma_read);
     drop(mm_mutex);
     drop(mm);
     drop(page);

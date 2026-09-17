@@ -204,7 +204,6 @@ xhci_sideband_remove_endpoint(struct xhci_sideband *sb,
 		return -ENODEV;
 
 	__xhci_sideband_remove_endpoint(sb, ep);
-	xhci_initialize_ring_info(ep->ring);
 
 	return 0;
 }
@@ -280,6 +279,31 @@ xhci_sideband_get_event_buffer(struct xhci_sideband *sb)
 EXPORT_SYMBOL_GPL(xhci_sideband_get_event_buffer);
 
 /**
+ * xhci_sideband_check - check the existence of active sidebands
+ * @hcd: the host controller driver associated with the target host controller
+ *
+ * Allow other drivers, such as usb controller driver, to check if there are
+ * any sideband activity on the host controller. This information could be used
+ * for power management or other forms of resource management. The caller should
+ * ensure downstream usb devices are all marked as "offload_pm_locked" to ensure
+ * the correctness of the return value.
+ *
+ * Returns true on any active sideband existence, false otherwise.
+ */
+bool xhci_sideband_check(struct usb_hcd *hcd)
+{
+	struct usb_device *udev = hcd->self.root_hub;
+	bool active;
+
+	usb_lock_device(udev);
+	active = usb_offload_check(udev);
+	usb_unlock_device(udev);
+
+	return active;
+}
+EXPORT_SYMBOL_GPL(xhci_sideband_check);
+
+/**
  * xhci_sideband_create_interrupter - creates a new interrupter for this sideband
  * @sb: sideband instance for this usb device
  * @num_seg: number of event ring segments to allocate
@@ -298,8 +322,6 @@ int
 xhci_sideband_create_interrupter(struct xhci_sideband *sb, int num_seg,
 				 bool ip_autoclear, u32 imod_interval, int intr_num)
 {
-	int ret = 0;
-
 	if (!sb || !sb->xhci)
 		return -ENODEV;
 
@@ -319,7 +341,7 @@ xhci_sideband_create_interrupter(struct xhci_sideband *sb, int num_seg,
 
 	sb->ir->ip_autoclear = ip_autoclear;
 
-	return ret;
+	return 0;
 }
 EXPORT_SYMBOL_GPL(xhci_sideband_create_interrupter);
 

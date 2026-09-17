@@ -1680,7 +1680,7 @@ static ssize_t analysis_trigger_store(struct device *dev,
 		return -EINVAL;
 
 	ret = hid_query_attr(hba, UPIU_QUERY_OPCODE_WRITE_ATTR,
-			QUERY_ATTR_IDN_HID_DEFRAG_OPERATION, &mode);
+			(enum attr_idn)QUERY_ATTR_IDN_HID_DEFRAG_OPERATION, &mode);
 
 	return ret < 0 ? ret : count;
 }
@@ -1702,7 +1702,7 @@ static ssize_t defrag_trigger_store(struct device *dev,
 		return -EINVAL;
 
 	ret = hid_query_attr(hba, UPIU_QUERY_OPCODE_WRITE_ATTR,
-			QUERY_ATTR_IDN_HID_DEFRAG_OPERATION, &mode);
+			(enum attr_idn)QUERY_ATTR_IDN_HID_DEFRAG_OPERATION, &mode);
 
 	return ret < 0 ? ret : count;
 }
@@ -1717,7 +1717,7 @@ static ssize_t fragmented_size_show(struct device *dev,
 	int ret;
 
 	ret = hid_query_attr(hba, UPIU_QUERY_OPCODE_READ_ATTR,
-			QUERY_ATTR_IDN_HID_AVAILABLE_SIZE, &value);
+			(enum attr_idn)QUERY_ATTR_IDN_HID_AVAILABLE_SIZE, &value);
 	if (ret)
 		return ret;
 
@@ -1734,7 +1734,7 @@ static ssize_t defrag_size_show(struct device *dev,
 	int ret;
 
 	ret = hid_query_attr(hba, UPIU_QUERY_OPCODE_READ_ATTR,
-			QUERY_ATTR_IDN_HID_SIZE, &value);
+			(enum attr_idn)QUERY_ATTR_IDN_HID_SIZE, &value);
 	if (ret)
 		return ret;
 
@@ -1752,7 +1752,7 @@ static ssize_t defrag_size_store(struct device *dev,
 		return -EINVAL;
 
 	ret = hid_query_attr(hba, UPIU_QUERY_OPCODE_WRITE_ATTR,
-			QUERY_ATTR_IDN_HID_SIZE, &value);
+			(enum attr_idn)QUERY_ATTR_IDN_HID_SIZE, &value);
 
 	return ret < 0 ? ret : count;
 }
@@ -1767,7 +1767,7 @@ static ssize_t progress_ratio_show(struct device *dev,
 	int ret;
 
 	ret = hid_query_attr(hba, UPIU_QUERY_OPCODE_READ_ATTR,
-			QUERY_ATTR_IDN_HID_PROGRESS_RATIO, &value);
+			(enum attr_idn)QUERY_ATTR_IDN_HID_PROGRESS_RATIO, &value);
 	if (ret)
 		return ret;
 
@@ -1784,7 +1784,7 @@ static ssize_t state_show(struct device *dev,
 	int ret;
 
 	ret = hid_query_attr(hba, UPIU_QUERY_OPCODE_READ_ATTR,
-			QUERY_ATTR_IDN_HID_STATE, &value);
+			(enum attr_idn)QUERY_ATTR_IDN_HID_STATE, &value);
 	if (ret)
 		return ret;
 
@@ -1812,7 +1812,7 @@ static umode_t ufs_sysfs_hid_is_visible(struct kobject *kobj,
 	return to_hba_priv(hba)->hid_sup ? attr->mode : 0;
 }
 
-const struct attribute_group ufs_sysfs_hid_group = {
+static const struct attribute_group ufs_sysfs_hid_group = {
 	.name = "hid",
 	.attrs = ufs_sysfs_hid,
 	.is_visible = ufs_sysfs_hid_is_visible,
@@ -1864,7 +1864,7 @@ UFS_UNIT_DESC_PARAM(logical_block_size, _LOGICAL_BLK_SIZE, 1);
 UFS_UNIT_DESC_PARAM(logical_block_count, _LOGICAL_BLK_COUNT, 8);
 UFS_UNIT_DESC_PARAM(erase_block_size, _ERASE_BLK_SIZE, 4);
 UFS_UNIT_DESC_PARAM(provisioning_type, _PROVISIONING_TYPE, 1);
-UFS_UNIT_DESC_PARAM(physical_memory_resourse_count, _PHY_MEM_RSRC_CNT, 8);
+UFS_UNIT_DESC_PARAM(physical_memory_resource_count, _PHY_MEM_RSRC_CNT, 8);
 UFS_UNIT_DESC_PARAM(context_capabilities, _CTX_CAPABILITIES, 2);
 UFS_UNIT_DESC_PARAM(large_unit_granularity, _LARGE_UNIT_SIZE_M1, 1);
 UFS_UNIT_DESC_PARAM(wb_buf_alloc_units, _WB_BUF_ALLOC_UNITS, 4);
@@ -1881,7 +1881,7 @@ static struct attribute *ufs_sysfs_unit_descriptor[] = {
 	&dev_attr_logical_block_count.attr,
 	&dev_attr_erase_block_size.attr,
 	&dev_attr_provisioning_type.attr,
-	&dev_attr_physical_memory_resourse_count.attr,
+	&dev_attr_physical_memory_resource_count.attr,
 	&dev_attr_context_capabilities.attr,
 	&dev_attr_large_unit_granularity.attr,
 	&dev_attr_wb_buf_alloc_units.attr,

@@ -247,6 +247,18 @@
 # required audio_platform.ko
   snd_pcm_rate_bit_to_rate
 
+# batman-adv.ko
+  dev_get_iflink
+  skb_prepare_seq_read
+  skb_seq_read
+  ip_mc_check_igmp
+  ipv6_mc_check_mld
+  br_multicast_has_router_adjacent
+  br_multicast_has_querier_anywhere
+  br_multicast_has_querier_adjacent
+  br_multicast_list_adjacent
+  netdev_master_upper_dev_get_rcu
+
 # required haptic.ko
   devm_led_classdev_unregister
 
@@ -289,6 +301,9 @@
 
 # required mmdvfs.ko
   devfreq_event_get_event
+
+# required ntfs3.ko
+  filemap_fdatawrite_range_kick
 
 # required pinctrl_sprd.ko
   pinctrl_register
@@ -390,6 +405,15 @@
   typec_set_vconn_role
   typec_unregister_altmode
   usb_role_switch_get
+
+# required sprd_typec_displayport.ko
+  typec_altmode_enter
+  typec_altmode_exit
+  typec_altmode_get_partner
+  typec_altmode2port
+  __typec_altmode_register_driver
+  typec_altmode_unregister_driver
+  typec_get_negotiated_svdm_version
 
 # required sprd_usb_f_rndis.ko
   gether_cleanup

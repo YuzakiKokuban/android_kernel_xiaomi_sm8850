@@ -23,6 +23,10 @@ DECLARE_HOOK(android_vh_cgroup_attach,
 	TP_PROTO(struct cgroup_subsys *ss, struct cgroup_taskset *tset),
 	TP_ARGS(ss, tset));
 
+DECLARE_RESTRICTED_HOOK(android_rvh_cgroup_force_kthread_migration,
+	TP_PROTO(struct task_struct *tsk, struct cgroup *dst_cgrp, bool *force_migration),
+	TP_ARGS(tsk, dst_cgrp, force_migration), 1);
+
 DECLARE_RESTRICTED_HOOK(android_rvh_cpuset_fork,
 	TP_PROTO(struct task_struct *p, bool *inherit_cpus),
 	TP_ARGS(p, inherit_cpus), 1);
@@ -34,6 +38,14 @@ DECLARE_RESTRICTED_HOOK(android_rvh_cpu_cgroup_attach,
 DECLARE_RESTRICTED_HOOK(android_rvh_cpu_cgroup_online,
 	TP_PROTO(struct cgroup_subsys_state *css),
 	TP_ARGS(css), 1);
+
+DECLARE_HOOK(android_vh_cpuset_attach_task,
+	TP_PROTO(struct cgroup_subsys_state *css, struct task_struct *task),
+	TP_ARGS(css, task));
+
+DECLARE_HOOK(android_vh_cpuset_css_online,
+	TP_PROTO(struct cgroup_subsys_state *css),
+	TP_ARGS(css));
 #endif
 
 #include <trace/define_trace.h>

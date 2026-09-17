@@ -9,9 +9,6 @@
 
 #include <trace/hooks/vendor_hooks.h>
 
-DECLARE_HOOK(android_vh_proactive_compact_wmark_high,
-	TP_PROTO(int *wmark_high),
-	TP_ARGS(wmark_high));
 DECLARE_HOOK(android_vh_compaction_exit,
 	TP_PROTO(int node_id, int order, const int highest_zoneidx),
 	TP_ARGS(node_id, order, highest_zoneidx));

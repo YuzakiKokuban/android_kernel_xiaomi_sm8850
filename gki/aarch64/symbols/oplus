@@ -2,6 +2,7 @@
   address_space_init_once
   alarm_start
   backing_file_open
+  backing_file_user_path
   backing_tmpfile_open
   bio_add_page
   bio_associate_blkg
@@ -135,6 +136,7 @@
   mem_cgroup_update_lru_size
   memory_cgrp_subsys
   memory_cgrp_subsys_enabled_key
+  cgroup_add_dfl_cftypes
   mipi_dsi_generic_write
   mmc_wait_for_cmd
   mnt_drop_write
@@ -294,13 +296,18 @@
   __traceiter_android_vh_cpufreq_fast_switch
   __traceiter_android_vh_exit_check
   __traceiter_android_vh_move_entity
+  __traceiter_android_vh_sca_migrate_same
   __traceiter_android_vh_scx_restore_flags
   __traceiter_android_vh_task_should_scx
+  __traceiter_android_vh_enq_to_priq
+  __traceiter_android_vh_scx_switch_repeat_skip
   __traceiter_android_vh_scx_ops_consider_migration
   __traceiter_android_vh_scx_fix_prev_slice
   __traceiter_android_vh_scx_ops_enable_state
   __traceiter_android_vh_scx_enabled
   __traceiter_android_vh_scx_set_cpus_allowed
+  __traceiter_android_vh_scx_task_can_run_on
+  __traceiter_android_vh_scx_exit_on_abnormal
   __traceiter_android_vh_scx_task_switch_finish
   __traceiter_android_vh_cgroup_set_task
   __traceiter_android_vh_check_folio_look_around_ref
@@ -345,6 +352,7 @@
   __traceiter_android_vh_mutex_opt_spin_finish
   __traceiter_android_vh_mutex_opt_spin_start
   __traceiter_android_vh_mutex_unlock_slowpath
+  __traceiter_android_vh_oom_evaluate_task_bypass
   __traceiter_android_vh_page_add_new_anon_rmap
   __traceiter_android_vh_percpu_rwsem_wq_add
   __traceiter_android_vh_ra_tuning_max_page
@@ -363,6 +371,7 @@
   __traceiter_android_vh_save_track_hash
   __traceiter_android_vh_sched_move_task
   __traceiter_android_vh_sched_setaffinity_early
+  __traceiter_android_vh_setscheduler_class
   __traceiter_android_vh_tick_nohz_idle_stop_tick
   __traceiter_android_vh_should_alloc_pages_retry
   __traceiter_android_vh_show_stack_hash
@@ -374,6 +383,7 @@
   __traceiter_android_vh_tune_mmap_readaround
   __traceiter_android_vh_tune_swappiness
   __traceiter_android_vh_tune_inactive_ratio
+  __traceiter_android_vh_mem_cgroup_flush_stats_bypass
   __traceiter_android_vh_unreserve_highatomic_bypass
   __traceiter_android_vh_vmscan_kswapd_done
   __traceiter_android_vh_page_cache_ra_order_bypass
@@ -399,6 +409,10 @@
   __traceiter_task_rename
   __traceiter_android_vh_binder_alloc_new_buf_locked
   __traceiter_android_vh_copy_process
+  __traceiter_android_vh_wp_page_reuse
+  __traceiter_android_vh_resched_curr_lazy
+  __traceiter_android_vh_restore_curr_resched
+  __traceiter_android_vh_clear_curr_lazy
   __tracepoint_android_vh_account_task_time
   __tracepoint_android_rvh_alloc_workqueue
   __tracepoint_android_rvh_check_preempt_wakeup_fair
@@ -437,13 +451,18 @@
   __tracepoint_android_vh_cpufreq_fast_switch
   __tracepoint_android_vh_exit_check
   __tracepoint_android_vh_move_entity
+  __tracepoint_android_vh_sca_migrate_same
   __tracepoint_android_vh_scx_restore_flags
   __tracepoint_android_vh_task_should_scx
+  __tracepoint_android_vh_enq_to_priq
+  __tracepoint_android_vh_scx_switch_repeat_skip
   __tracepoint_android_vh_scx_ops_consider_migration
   __tracepoint_android_vh_scx_fix_prev_slice
   __tracepoint_android_vh_scx_ops_enable_state
   __tracepoint_android_vh_scx_enabled
   __tracepoint_android_vh_scx_set_cpus_allowed
+  __tracepoint_android_vh_scx_task_can_run_on
+  __tracepoint_android_vh_scx_exit_on_abnormal
   __tracepoint_android_vh_scx_task_switch_finish
   __tracepoint_android_vh_cgroup_set_task
   __tracepoint_android_vh_check_folio_look_around_ref
@@ -488,6 +507,7 @@
   __tracepoint_android_vh_mutex_opt_spin_finish
   __tracepoint_android_vh_mutex_opt_spin_start
   __tracepoint_android_vh_mutex_unlock_slowpath
+  __tracepoint_android_vh_oom_evaluate_task_bypass
   __tracepoint_android_vh_page_add_new_anon_rmap
   __tracepoint_android_vh_percpu_rwsem_wq_add
   __tracepoint_android_vh_ra_tuning_max_page
@@ -506,6 +526,7 @@
   __tracepoint_android_vh_save_vmalloc_stack
   __tracepoint_android_vh_sched_move_task
   __tracepoint_android_vh_sched_setaffinity_early
+  __tracepoint_android_vh_setscheduler_class
   __tracepoint_android_vh_tick_nohz_idle_stop_tick
   __tracepoint_android_vh_should_alloc_pages_retry
   __tracepoint_android_vh_show_stack_hash
@@ -517,6 +538,7 @@
   __tracepoint_android_vh_tune_mmap_readaround
   __tracepoint_android_vh_tune_swappiness
   __tracepoint_android_vh_tune_inactive_ratio
+  __tracepoint_android_vh_mem_cgroup_flush_stats_bypass
   __tracepoint_android_vh_unreserve_highatomic_bypass
   __tracepoint_android_vh_vmscan_kswapd_done
   __tracepoint_android_vh_page_cache_ra_order_bypass
@@ -542,6 +564,7 @@
   __tracepoint_task_rename
   __tracepoint_android_vh_binder_alloc_new_buf_locked
   __tracepoint_android_vh_copy_process
+  __tracepoint_android_vh_wp_page_reuse
   __trace_puts
   truncate_inode_pages
   try_to_del_timer_sync
@@ -619,6 +642,14 @@
   __traceiter_android_rvh_kswapd_shrink_node
   __traceiter_android_rvh_perform_reclaim
   __traceiter_android_vh_mglru_should_abort_scan_ex
+  __traceiter_android_vh_folio_add_lru_folio_activate
+  __traceiter_android_vh_filemap_fault_pre_folio_locked
+  __traceiter_android_vh_filemap_folio_mapped
+  __traceiter_android_vh_folio_remove_rmap_ptes
+  __traceiter_android_vh_lock_delay_schedule
+  __traceiter_android_vh_lock_task_fork
+  __traceiter_android_vh_lock_task_exit
+  __traceiter_android_vh_skip_cma
   __tracepoint_android_vh_lru_gen_add_folio_skip
   __tracepoint_android_vh_lru_gen_del_folio_skip
   __tracepoint_android_vh_evict_folios_bypass
@@ -628,12 +659,15 @@
   __tracepoint_android_rvh_kswapd_shrink_node
   __tracepoint_android_rvh_perform_reclaim
   __tracepoint_android_vh_mglru_should_abort_scan_ex
-  __traceiter_android_vh_folio_add_lru_folio_activate
-  __traceiter_android_vh_filemap_fault_pre_folio_locked
-  __traceiter_android_vh_filemap_folio_mapped
-  __traceiter_android_vh_folio_remove_rmap_ptes
   __tracepoint_android_vh_folio_add_lru_folio_activate
   __tracepoint_android_vh_filemap_fault_pre_folio_locked
   __tracepoint_android_vh_filemap_folio_mapped
   __tracepoint_android_vh_folio_remove_rmap_ptes
+  __tracepoint_android_vh_resched_curr_lazy
+  __tracepoint_android_vh_restore_curr_resched
+  __tracepoint_android_vh_clear_curr_lazy
+  __tracepoint_android_vh_lock_delay_schedule
+  __tracepoint_android_vh_lock_task_fork
+  __tracepoint_android_vh_lock_task_exit
   isolate_folio
+  __tracepoint_android_vh_skip_cma

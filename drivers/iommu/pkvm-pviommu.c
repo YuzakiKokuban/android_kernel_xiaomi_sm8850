@@ -92,21 +92,24 @@ static void pviommu_domain_remove_map(struct pviommu_domain *pv_domain,
 	/* Range can cover multiple entries. */
 	while (start < end) {
 		MA_STATE(mas, &pv_domain->mappings, start, end);
-		u64 entry = xa_to_value(mas_find(&mas, start));
+		u64 entry;
 		u64 old_start, old_end;
 
+		mtree_lock(mas.tree);
+		entry = xa_to_value(mas_find(&mas, start));
 		old_start = mas.index;
 		old_end = mas.last;
 		mas_erase(&mas);
-		/* Insert the rest if not removed. */
-		if (start > old_start)
-			mtree_store_range(&pv_domain->mappings, old_start, start - 1,
-					  xa_mk_value(entry), GFP_KERNEL);
-
-		if (old_end > end)
-			mtree_store_range(&pv_domain->mappings, end + 1, old_end,
-					  xa_mk_value(entry + end - old_start + 1), GFP_KERNEL);
-
+		if (start > old_start) {
+			MA_STATE(mas_border, &pv_domain->mappings, old_start, start - 1);
+			WARN_ON(mas_store_gfp(&mas_border, xa_mk_value(entry), GFP_ATOMIC));
+		}
+		if (old_end > end) {
+			MA_STATE(mas_border, &pv_domain->mappings, end + 1, old_end);
+			WARN_ON(mas_store_gfp(&mas_border, xa_mk_value(entry + end - old_start + 1),
+				GFP_ATOMIC));
+		}
+		mtree_unlock(mas.tree);
 		start = old_end + 1;
 	}
 }
@@ -114,8 +117,11 @@ static void pviommu_domain_remove_map(struct pviommu_domain *pv_domain,
 static u64 pviommu_domain_find(struct pviommu_domain *pv_domain, u64 key)
 {
 	MA_STATE(mas, &pv_domain->mappings, key, key);
-	void *entry = mas_find(&mas, key);
+	void *entry;
 
+	mtree_lock(mas.tree);
+	entry = mas_find(&mas, key);
+	mtree_unlock(mas.tree);
 	/* No entry. */
 	if (!xa_is_value(entry))
 		return 0;
@@ -203,7 +209,7 @@ static void pviommu_remove_dev_pasid(struct device *dev, ioasid_t pasid,
 	struct pviommu_master *master = dev_iommu_priv_get(dev);
 	struct iommu_fwspec *fwspec = dev_iommu_fwspec_get(dev);
 	struct pviommu *pv = master->iommu;
-	struct pviommu_domain *pv_domain = master->domain;
+	struct pviommu_domain *pv_domain = container_of(domain, struct pviommu_domain, domain);
 	struct arm_smccc_res res;
 	u32 sid;
 	int i;
@@ -427,6 +433,8 @@ static int pviommu_probe(struct platform_device *pdev)
 	if (res.a0 < 0)
 		return -ENODEV;
 
+	/* Hardcoded value for now as there is now way to probe this information. */
+	pv->iommu.max_pasids = 256;
 	pviommu_ops.pgsize_bitmap = res.a0;
 
 	ret = iommu_device_sysfs_add(&pv->iommu, dev, NULL,

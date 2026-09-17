@@ -347,7 +347,7 @@ static struct dev_iommu *dev_iommu_get(struct device *dev)
 	return param;
 }
 
-static void dev_iommu_free(struct device *dev)
+void dev_iommu_free(struct device *dev)
 {
 	struct dev_iommu *param = dev->iommu;
 
@@ -503,6 +503,9 @@ static void iommu_deinit_device(struct device *dev)
 	dev->iommu_group = NULL;
 	module_put(ops->owner);
 	dev_iommu_free(dev);
+#ifdef CONFIG_IOMMU_DMA
+	dev->dma_iommu = false;
+#endif
 }
 
 DEFINE_MUTEX(iommu_probe_device_lock);
@@ -2390,6 +2393,7 @@ static size_t iommu_pgsize(struct iommu_domain *domain, unsigned long iova,
 	unsigned int pgsize_idx, pgsize_idx_next;
 	unsigned long pgsizes;
 	size_t offset, pgsize, pgsize_next;
+	size_t offset_end;
 	unsigned long addr_merge = paddr | iova;
 
 	/* Page sizes supported by the hardware and small enough for @size */
@@ -2430,7 +2434,8 @@ static size_t iommu_pgsize(struct iommu_domain *domain, unsigned long iova,
 	 * If size is big enough to accommodate the larger page, reduce
 	 * the number of smaller pages.
 	 */
-	if (offset + pgsize_next <= size)
+	if (!check_add_overflow(offset, pgsize_next, &offset_end) &&
+	    offset_end <= size)
 		size = offset;
 
 out_set_count:
@@ -2635,7 +2640,7 @@ static int __iommu_add_sg(struct iommu_map_cookie_sg *cookie_sg,
 	struct iommu_domain *domain = cookie_sg->domain;
 	const struct iommu_domain_ops *ops = domain->ops;
 	unsigned int min_pagesz;
-	size_t pgsize, count;
+	int ret = 0;
 
 	if (unlikely(!(domain->type & __IOMMU_DOMAIN_PAGING)))
 		return -EINVAL;
@@ -2656,8 +2661,22 @@ static int __iommu_add_sg(struct iommu_map_cookie_sg *cookie_sg,
 		       iova, &paddr, size, min_pagesz);
 		return -EINVAL;
 	}
-	pgsize = iommu_pgsize(domain, iova, paddr, size, &count);
-	return ops->add_deferred_map_sg(cookie_sg, paddr, pgsize, count);
+
+	while (size) {
+		size_t pgsize, count, added;
+
+		pgsize = iommu_pgsize(domain, iova, paddr, size, &count);
+		ret = ops->add_deferred_map_sg(cookie_sg, paddr, pgsize, count);
+		if (ret)
+			break;
+
+		added = pgsize * count;
+		size -= added;
+		iova += added;
+		paddr += added;
+	}
+
+	return ret;
 }
 
 ssize_t iommu_map_sg(struct iommu_domain *domain, unsigned long iova,
@@ -2675,22 +2694,25 @@ ssize_t iommu_map_sg(struct iommu_domain *domain, unsigned long iova,
 
 	if (deferred_sg) {
 		cookie_sg = ops->alloc_cookie_sg(iova, prot, nents, gfp);
-		if (!cookie_sg) {
-			pr_err("iommu: failed alloc cookie\n");
-			return -ENOMEM;
-		}
-		cookie_sg->domain = domain;
+		if (cookie_sg)
+			cookie_sg->domain = domain;
+		else
+			deferred_sg = false;
 	}
 
 	while (i <= nents) {
 		phys_addr_t s_phys = sg_phys(sg);
 
 		if (len && s_phys != start + len) {
-			if (deferred_sg)
+			if (deferred_sg) {
 				ret = __iommu_add_sg(cookie_sg, iova + mapped, start, len);
-			else
+				/* Override mapped with the actual value and free the lists. */
+				if (ret)
+					mapped = ops->consume_deferred_map_sg(cookie_sg);
+			} else {
 				ret = iommu_map_nosync(domain, iova + mapped, start,
 						  len, prot, gfp);
+			}
 			if (ret)
 				goto out_err;
 
@@ -2717,9 +2739,9 @@ next:
 		size_t consumed;
 
 		consumed = ops->consume_deferred_map_sg(cookie_sg);
-		if (consumed != mapped) {
+		if (WARN_ON(consumed != mapped)) {
 			mapped = consumed;
-			ret = EINVAL;
+			ret = -EINVAL;
 			goto out_err;
 		}
 	}
@@ -3181,6 +3203,11 @@ int iommu_device_use_default_domain(struct device *dev)
 		return 0;
 
 	mutex_lock(&group->mutex);
+	/* We may race against bus_iommu_probe() finalising groups here */
+	if (!group->default_domain) {
+		ret = -EPROBE_DEFER;
+		goto unlock_out;
+	}
 	if (group->owner_cnt) {
 		if (group->domain != group->default_domain || group->owner ||
 		    !xa_empty(&group->pasid_array)) {

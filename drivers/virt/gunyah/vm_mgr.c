@@ -458,6 +458,7 @@ static void gunyah_vm_clean_resources(struct gunyah_vm *ghvm)
 	}
 
 	list_for_each_entry_safe(ghrsc, riter, &ghvm->resources, list) {
+		list_del(&ghrsc->list);
 		gunyah_rm_free_resource(ghrsc);
 	}
 	mutex_unlock(&ghvm->resources_lock);
@@ -799,7 +800,7 @@ out:
 
 static int gunyah_vm_start(struct gunyah_vm *ghvm)
 {
-	struct gunyah_rm_hyp_resources *resources;
+	struct gunyah_rm_hyp_resources *resources = NULL;
 	struct gunyah_resource *ghrsc;
 	int ret, i, n;
 	u16 vmid = 0;
@@ -914,6 +915,10 @@ static int gunyah_vm_start(struct gunyah_vm *ghvm)
 	if (ret)
 		goto err;
 
+	if (ghvm->fw.config.size > 0 && ghvm->auth == GUNYAH_RM_VM_AUTH_QCOM_TRUSTED_VM)
+		trace_android_rvh_gh_note_fw_parcel(ghvm, ghvm->vmid,
+						    ghvm->fw.parcel.parcel.mem_handle);
+
 	ret = gunyah_rm_vm_start(ghvm->rm, ghvm->vmid);
 	if (ret) {
 		dev_warn(ghvm->parent, "Failed to start VM: %d\n", ret);
@@ -922,6 +927,7 @@ static int gunyah_vm_start(struct gunyah_vm *ghvm)
 
 	ghvm->vm_status = GUNYAH_RM_VM_STATUS_RUNNING;
 	up_write(&ghvm->status_lock);
+	kfree(resources);
 	return ret;
 err_dealloc_vmid:
 	ret = gunyah_rm_dealloc_vmid(ghvm->rm, ghvm->vmid);
@@ -934,6 +940,7 @@ err:
 	/* gunyah_vm_free will handle releasing resources and reclaiming memory */
 	gunyah_vm_start_fail(ghvm);
 	up_write(&ghvm->status_lock);
+	kfree(resources);
 	return ret;
 }
 

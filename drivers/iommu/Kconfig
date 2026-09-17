@@ -199,7 +199,6 @@ source "drivers/iommu/iommufd/Kconfig"
 config IRQ_REMAP
 	bool "Support for Interrupt Remapping"
 	depends on X86_64 && X86_IO_APIC && PCI_MSI && ACPI
-	select DMAR_TABLE if INTEL_IOMMU
 	help
 	  Supports Interrupt remapping for IO-APIC and MSI devices.
 	  To use x2apic mode in the CPU's which support x2APIC enhancements or
@@ -387,6 +386,17 @@ config ARM_SMMU_QCOM_DEBUG
 	  Say Y here to enable debug for issues such as context faults
 	  or TLB sync timeouts which requires implementation defined
 	  register dumps.
+
+config ARM_SMMU_NVIDIA
+	tristate "NVIDIA Tegra SMMU implementation"
+	depends on ARM_SMMU && TEGRA_MC
+	help
+	  Support for NVIDIA Tegra SoC specific SMMU implementation.
+	  This enables the NVIDIA specific ARM SMMU implementation
+	  which is required for Tegra186, Tegra194, and Tegra234 SoCs.
+
+	  Say M here if you are building for an NVIDIA Tegra platform
+	  that uses ARM SMMU.
 
 config ARM_SMMU_V3
 	tristate "ARM Ltd. System MMU Version 3 (SMMUv3) Support"

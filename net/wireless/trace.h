@@ -304,6 +304,27 @@ TRACE_EVENT(wiphy_delayed_work_queue,
 		  __entry->delay)
 );
 
+TRACE_EVENT(wiphy_hrtimer_work_queue,
+	TP_PROTO(struct wiphy *wiphy, struct wiphy_work *work,
+		 ktime_t delay),
+	TP_ARGS(wiphy, work, delay),
+	TP_STRUCT__entry(
+		WIPHY_ENTRY
+		__field(void *, instance)
+		__field(void *, func)
+		__field(ktime_t, delay)
+	),
+	TP_fast_assign(
+		WIPHY_ASSIGN;
+		__entry->instance = work;
+		__entry->func = work->func;
+		__entry->delay = delay;
+	),
+	TP_printk(WIPHY_PR_FMT " instance=%p func=%pS delay=%llu",
+		  WIPHY_PR_ARG, __entry->instance, __entry->func,
+		  __entry->delay)
+);
+
 TRACE_EVENT(wiphy_work_worker_start,
 	TP_PROTO(struct wiphy *wiphy),
 	TP_ARGS(wiphy),
@@ -4104,20 +4125,22 @@ TRACE_EVENT(cfg80211_links_removed,
 
 TRACE_EVENT(cfg80211_mlo_reconf_add_done,
 	TP_PROTO(struct net_device *netdev, u16 link_mask,
-		 const u8 *buf, size_t len),
-	TP_ARGS(netdev, link_mask, buf, len),
+		 const u8 *buf, size_t len, bool driver_initiated),
+	TP_ARGS(netdev, link_mask, buf, len, driver_initiated),
 	TP_STRUCT__entry(
 		NETDEV_ENTRY
 		__field(u16, link_mask)
 		__dynamic_array(u8, buf, len)
+		__field(bool, driver_initiated)
 	),
 	TP_fast_assign(
 		NETDEV_ASSIGN;
 		__entry->link_mask = link_mask;
 		memcpy(__get_dynamic_array(buf), buf, len);
+		__entry->driver_initiated = driver_initiated;
 	),
-	TP_printk(NETDEV_PR_FMT ", link_mask:0x%x",
-		  NETDEV_PR_ARG, __entry->link_mask)
+	TP_printk(NETDEV_PR_FMT ", link_mask:0x%x, driver_initiated:%d",
+		  NETDEV_PR_ARG, __entry->link_mask, __entry->driver_initiated)
 );
 
 TRACE_EVENT(rdev_assoc_ml_reconf,
