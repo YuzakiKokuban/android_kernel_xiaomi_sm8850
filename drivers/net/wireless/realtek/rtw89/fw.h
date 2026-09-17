@@ -97,6 +97,8 @@ struct rtw89_h2creg_sch_tx_en {
 #define RTW89_C2HREG_HDR_LEN 2
 #define RTW89_H2CREG_HDR_LEN 2
 #define RTW89_C2H_TIMEOUT 1000000
+#define RTW89_C2H_TIMEOUT_USB 4000
+
 struct rtw89_mac_c2h_info {
 	u8 id;
 	u8 content_len;
@@ -640,6 +642,11 @@ struct rtw89_fw_mss_pool_hdr {
 
 union rtw89_fw_section_mssc_content {
 	struct {
+		u8 pad[0x20];
+		u8 bit_in_chip_list;
+		u8 ver;
+	} __packed blacklist;
+	struct {
 		u8 pad[58];
 		__le32 v;
 	} __packed sb_sel_ver;
@@ -648,6 +655,13 @@ union rtw89_fw_section_mssc_content {
 		__le16 v;
 	} __packed key_sign_len;
 } __packed;
+
+struct rtw89_fw_blacklist {
+	u8 ver;
+	u8 list[32];
+};
+
+extern const struct rtw89_fw_blacklist rtw89_fw_blacklist_default;
 
 static inline void SET_CTRL_INFO_MACID(void *table, u32 val)
 {

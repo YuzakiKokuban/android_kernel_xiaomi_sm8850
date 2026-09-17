@@ -672,6 +672,11 @@ int make_device_exclusive_range(struct mm_struct *mm, unsigned long start,
 /* Look for migration entries rather than present PTEs */
 #define PVMW_MIGRATION		(1 << 1)
 
+/* Result flags */
+
+/* The page is mapped across page table boundary */
+#define PVMW_PGTABLE_CROSSED	(1 << 16)
+
 struct page_vma_mapped_walk {
 	unsigned long pfn;
 	unsigned long nr_pages;

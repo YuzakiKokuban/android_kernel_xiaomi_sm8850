@@ -31,6 +31,7 @@
 #include <linux/compiler.h>
 #include <linux/moduleparam.h>
 #include <linux/wakeup_reason.h>
+#include <trace/hooks/suspend.h>
 
 #include "power.h"
 
@@ -466,6 +467,7 @@ static int suspend_enter(suspend_state_t state, bool *wakeup)
 			error = suspend_ops->enter(state);
 			trace_suspend_resume(TPS("machine_suspend"),
 				state, false);
+			trace_android_vh_early_resume_begin(NULL);
 		} else if (*wakeup) {
 			error = -EBUSY;
 		}
@@ -544,6 +546,7 @@ int suspend_devices_and_enter(suspend_state_t state)
  Close:
 	platform_resume_end(state);
 	pm_suspend_target_state = PM_SUSPEND_ON;
+	trace_android_vh_resume_end(NULL);
 	return error;
 
  Recover_platform:
@@ -595,7 +598,11 @@ static int enter_state(suspend_state_t state)
 
 	if (sync_on_suspend_enabled) {
 		trace_suspend_resume(TPS("sync_filesystems"), 0, true);
-		ksys_sync_helper();
+
+		error = pm_sleep_fs_sync();
+		if (error)
+			goto Unlock;
+
 		trace_suspend_resume(TPS("sync_filesystems"), 0, false);
 	}
 

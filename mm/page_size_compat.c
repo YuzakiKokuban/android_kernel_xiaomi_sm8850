@@ -10,7 +10,6 @@
 #include <linux/init.h>
 #include <linux/kstrtox.h>
 #include <linux/mm.h>
-#include <linux/moduleparam.h>
 #include <linux/pagemap.h>
 #include <linux/page_size_compat.h>
 #include <linux/swap.h>
@@ -26,15 +25,11 @@ EXPORT_SYMBOL_GPL(page_shift_compat_enabled);
 int page_shift_compat __ro_after_init = MIN_PAGE_SHIFT_COMPAT;
 EXPORT_SYMBOL_GPL(page_shift_compat);
 
-static int __init page_shift_params(char *param, char *val,
-				    const char *unused, void *arg)
+static int __init early_page_shift_compat(char *buf)
 {
 	int ret;
 
-	if (strcmp(param, "page_shift") != 0)
-		return 0;
-
-	ret = kstrtoint(val, 10, &page_shift_compat);
+	ret = kstrtoint(buf, 10, &page_shift_compat);
 	if (ret)
 		return ret;
 
@@ -50,27 +45,7 @@ static int __init page_shift_params(char *param, char *val,
 
 	return 0;
 }
-
-static int __init init_page_shift_compat(void)
-{
-	char *err;
-	char *command_line;
-
-	command_line = kstrdup(saved_command_line, GFP_KERNEL);
-	if (!command_line)
-		return -ENOMEM;
-
-	err = parse_args("page_shift", command_line, NULL, 0, 0, 0, NULL,
-			page_shift_params);
-
-	kfree(command_line);
-
-	if (IS_ERR(err))
-		return -EINVAL;
-
-	return 0;
-}
-pure_initcall(init_page_shift_compat);
+early_param("page_shift", early_page_shift_compat);
 
 static int __init init_mmap_rnd_bits(void)
 {
@@ -119,29 +94,6 @@ unsigned long ___filemap_len(struct inode *inode, unsigned long pgoff, unsigned 
 	}
 
 	return len;
-}
-
-static inline bool is_shmem_fault(const struct vm_operations_struct *vm_ops)
-{
-#ifdef CONFIG_SHMEM
-	return vm_ops->fault == shmem_fault;
-#else
-	return false;
-#endif
-}
-
-static inline bool is_f2fs_filemap_fault(const struct vm_operations_struct *vm_ops)
-{
-#ifdef CONFIG_F2FS_FS
-	return vm_ops->fault == f2fs_filemap_fault;
-#else
-	return false;
-#endif
-}
-
-static inline bool is_filemap_fault(const struct vm_operations_struct *vm_ops)
-{
-	return vm_ops->fault == filemap_fault;
 }
 
 /*
@@ -216,7 +168,6 @@ void ___filemap_fixup(unsigned long addr, unsigned long prot, unsigned long file
 	struct mm_struct *mm = current->mm;
 	unsigned long populate = 0;
 	struct vm_area_struct *vma;
-	const struct vm_operations_struct *vm_ops;
 
 	if (!anon_len)
 		return;
@@ -235,12 +186,8 @@ void ___filemap_fixup(unsigned long addr, unsigned long prot, unsigned long file
 	 */
 	BUG_ON(!vma);
 
-	vm_ops = vma->vm_ops;
-	if (!vm_ops)
-		return;
-
 	/*
-	 * Insert fixup vmas for file backed and shmem backed VMAs.
+	 * Insert fixup vmas for file backed, including tmpfs (shmem) backed, VMAs.
 	 *
 	 * Faulting off the end of a file will result in SIGBUS since there is no
 	 * file page for the given file offset.
@@ -248,9 +195,12 @@ void ___filemap_fixup(unsigned long addr, unsigned long prot, unsigned long file
 	 * shmem pages live in page cache or swap cache. Looking up a page cache
 	 * page with an index (pgoff) beyond the file is invalid and will result
 	 * in shmem_get_folio_gfp() returning -EINVAL.
+	 *
+	 * It's not pratical to maintain a list of vm_ops for the constantly
+	 * changing list of supported filesystems on Android, so only test that
+	 * vm_ops exists.
 	 */
-	if (!is_filemap_fault(vm_ops) && !is_f2fs_filemap_fault(vm_ops) &&
-	    !is_shmem_fault(vm_ops))
+	if (!vma->vm_ops)
 		return;
 
 	/*

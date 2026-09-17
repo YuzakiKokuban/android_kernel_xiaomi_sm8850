@@ -47,6 +47,7 @@
 
 #include <trace/events/timer.h>
 #include <trace/hooks/syscall_check.h>
+#include <trace/hooks/timer.h>
 
 #include "tick-internal.h"
 
@@ -119,16 +120,6 @@ DEFINE_PER_CPU(struct hrtimer_cpu_base, hrtimer_bases) =
 		},
 	},
 	.csd = CSD_INIT(retrigger_next_event, NULL)
-};
-
-static const int hrtimer_clock_to_base_table[MAX_CLOCKS] = {
-	/* Make sure we catch unsupported clockids */
-	[0 ... MAX_CLOCKS - 1]	= HRTIMER_MAX_CLOCK_BASES,
-
-	[CLOCK_REALTIME]	= HRTIMER_BASE_REALTIME,
-	[CLOCK_MONOTONIC]	= HRTIMER_BASE_MONOTONIC,
-	[CLOCK_BOOTTIME]	= HRTIMER_BASE_BOOTTIME,
-	[CLOCK_TAI]		= HRTIMER_BASE_TAI,
 };
 
 static inline bool hrtimer_base_is_online(struct hrtimer_cpu_base *base)
@@ -812,10 +803,10 @@ static void retrigger_next_event(void *arg)
 	 * of the next expiring timer is enough. The return from the SMP
 	 * function call will take care of the reprogramming in case the
 	 * CPU was in a NOHZ idle sleep.
+	 *
+	 * In periodic low resolution mode, the next softirq expiration
+	 * must also be updated.
 	 */
-	if (!hrtimer_hres_active(base) && !tick_nohz_active)
-		return;
-
 	raw_spin_lock(&base->lock);
 	hrtimer_update_base(base);
 	if (hrtimer_hres_active(base))
@@ -945,7 +936,7 @@ static bool update_needs_ipi(struct hrtimer_cpu_base *cpu_base,
 			return true;
 
 		/* Extra check for softirq clock bases */
-		if (base->clockid < HRTIMER_BASE_MONOTONIC_SOFT)
+		if (base->index < HRTIMER_BASE_MONOTONIC_SOFT)
 			continue;
 		if (cpu_base->softirq_activated)
 			continue;
@@ -1601,14 +1592,19 @@ u64 hrtimer_next_event_without(const struct hrtimer *exclude)
 
 static inline int hrtimer_clockid_to_base(clockid_t clock_id)
 {
-	if (likely(clock_id < MAX_CLOCKS)) {
-		int base = hrtimer_clock_to_base_table[clock_id];
-
-		if (likely(base != HRTIMER_MAX_CLOCK_BASES))
-			return base;
+	switch (clock_id) {
+	case CLOCK_REALTIME:
+		return HRTIMER_BASE_REALTIME;
+	case CLOCK_MONOTONIC:
+		return HRTIMER_BASE_MONOTONIC;
+	case CLOCK_BOOTTIME:
+		return HRTIMER_BASE_BOOTTIME;
+	case CLOCK_TAI:
+		return HRTIMER_BASE_TAI;
+	default:
+		WARN(1, "Invalid clockid %d. Using MONOTONIC\n", clock_id);
+		return HRTIMER_BASE_MONOTONIC;
 	}
-	WARN(1, "Invalid clockid %d. Using MONOTONIC\n", clock_id);
-	return HRTIMER_BASE_MONOTONIC;
 }
 
 static void __hrtimer_init(struct hrtimer *timer, clockid_t clock_id,
@@ -2140,10 +2136,14 @@ long hrtimer_nanosleep(ktime_t rqtp, const enum hrtimer_mode mode,
 {
 	struct restart_block *restart;
 	struct hrtimer_sleeper t;
+	ktime_t expires = rqtp;
+	u64 delta_ns = current->timer_slack_ns;
 	int ret = 0;
 
+	trace_android_vh_adjust_timer_slack(current, &expires, &delta_ns,
+					    ANDROID_TIMER_SLACK_NANOSLEEP);
 	hrtimer_init_sleeper_on_stack(&t, clockid, mode);
-	hrtimer_set_expires_range_ns(&t.timer, rqtp, current->timer_slack_ns);
+	hrtimer_set_expires_range_ns(&t.timer, expires, delta_ns);
 	ret = do_nanosleep(&t, mode);
 	if (ret != -ERESTART_RESTARTBLOCK)
 		goto out;
@@ -2297,11 +2297,6 @@ int hrtimers_cpu_dying(unsigned int dying_cpu)
 				     &new_base->clock_base[i]);
 	}
 
-	/*
-	 * The migration might have changed the first expiring softirq
-	 * timer on this CPU. Update it.
-	 */
-	__hrtimer_get_next_event(new_base, HRTIMER_ACTIVE_SOFT);
 	/* Tell the other CPU to retrigger the next event */
 	smp_call_function_single(ncpu, retrigger_next_event, NULL, 0);
 
@@ -2333,6 +2328,8 @@ schedule_hrtimeout_range_clock(ktime_t *expires, u64 delta,
 			       const enum hrtimer_mode mode, clockid_t clock_id)
 {
 	struct hrtimer_sleeper t;
+	ktime_t timer_expires;
+	u64 delta_ns;
 
 	/*
 	 * Optimize when a zero timeout value is given. It does not
@@ -2351,8 +2348,12 @@ schedule_hrtimeout_range_clock(ktime_t *expires, u64 delta,
 		return -EINTR;
 	}
 
+	timer_expires = *expires;
+	delta_ns = delta;
+	trace_android_vh_adjust_timer_slack(current, &timer_expires, &delta_ns,
+					    ANDROID_TIMER_SLACK_SCHED_HRTIMEOUT);
 	hrtimer_init_sleeper_on_stack(&t, clock_id, mode);
-	hrtimer_set_expires_range_ns(&t.timer, *expires, delta);
+	hrtimer_set_expires_range_ns(&t.timer, timer_expires, delta_ns);
 	hrtimer_sleeper_start_expires(&t, mode);
 
 	if (likely(t.task))

@@ -19,6 +19,10 @@
 #include <linux/zsmalloc.h>
 #include <linux/crypto.h>
 
+#if IS_ENABLED(CONFIG_ZRAM_ANDROID_IOCTL)
+#include <linux/xarray.h>
+#endif
+
 #include "zcomp.h"
 
 #define SECTORS_PER_PAGE_SHIFT	(PAGE_SHIFT - SECTOR_SHIFT)
@@ -47,7 +51,7 @@
 enum zram_pageflags {
 	ZRAM_SAME = ZRAM_FLAG_SHIFT,	/* Page consists the same element */
 	ZRAM_WB,	/* page is stored on backing_device */
-	ZRAM_UNDER_WB,	/* page is under writeback */
+	ZRAM_PP_SLOT,	/* Selected for post-processing */
 	ZRAM_HUGE,	/* Incompressible page */
 	ZRAM_IDLE,	/* not accessed page since last idle marking */
 	ZRAM_INCOMPRESSIBLE, /* none of the algorithms could compress it */
@@ -129,16 +133,98 @@ struct zram {
 	bool claim; /* Protected by disk->open_mutex */
 #ifdef CONFIG_ZRAM_WRITEBACK
 	struct file *backing_dev;
-	spinlock_t wb_limit_lock;
 	bool wb_limit_enable;
+	bool compressed_wb;
+	u32 wb_batch_size;
 	u64 bd_wb_limit;
 	struct block_device *bdev;
 	unsigned long *bitmap;
 	unsigned long nr_pages;
+#endif
+#if IS_ENABLED(CONFIG_ZRAM_ANDROID_IOCTL)
+	struct xarray prefetch_cache;
 #endif
 #ifdef CONFIG_ZRAM_MEMORY_TRACKING
 	struct dentry *debugfs_dir;
 #endif
 	atomic_t pp_in_progress;
 };
+
+bool init_done(struct zram *zram);
+
+#if defined CONFIG_ZRAM_WRITEBACK || defined CONFIG_ZRAM_MULTI_COMP
+
+/*
+ * A post-processing bucket is, essentially, a size class, this defines
+ * the range (in bytes) of pp-slots sizes in particular bucket.
+ */
+#define PP_BUCKET_SIZE_RANGE	64
+#define NUM_PP_BUCKETS		((PAGE_SIZE / PP_BUCKET_SIZE_RANGE) + 1)
+
+struct zram_pp_ctl {
+	struct list_head	pp_buckets[NUM_PP_BUCKETS];
+};
+
+struct zram_pp_ctl *init_pp_ctl(void);
+void release_pp_ctl(struct zram *zram, struct zram_pp_ctl *ctl);
+#endif
+
+#ifdef CONFIG_ZRAM_WRITEBACK
+struct zram_wb_ctl {
+	/* idle list is accessed only by the writeback task, no concurency */
+	struct list_head idle_reqs;
+	/* done list is accessed concurrently, protect by done_lock */
+	struct list_head done_reqs;
+	wait_queue_head_t done_wait;
+	spinlock_t done_lock;
+	atomic_t num_inflight;
+	u64 processed_bytes;
+};
+
+struct zram_wb_ctl *init_wb_ctl(struct zram *zram);
+void release_wb_ctl(struct zram_wb_ctl *wb_ctl);
+int scan_slots_for_writeback(struct zram *zram, u32 mode,
+			     unsigned long lo, unsigned long hi,
+			     struct zram_pp_ctl *ctl);
+int zram_writeback_slots(struct zram *zram,
+			 struct zram_pp_ctl *ctl,
+			 struct zram_wb_ctl *wb_ctl);
+int scan_slot_for_prefetch(struct zram *zram, unsigned long index,
+			   struct zram_pp_ctl *ctl);
+int zram_prefetch_slots(struct zram *zram, struct zram_pp_ctl *ctl);
+#endif
+
+#if IS_ENABLED(CONFIG_ZRAM_ANDROID_IOCTL)
+void zram_prefetch_cache_init(struct zram *zram);
+void zram_prefetch_cache_destroy(struct zram *zram);
+bool zram_prefetch_cache_exist(struct zram *zram, u32 index);
+int zram_prefetch_cache_store(struct zram *zram, u32 index,
+			      unsigned long blk_idx);
+int zram_prefetch_cache_reuse(struct zram *zram, u32 index);
+int zram_prefetch_cache_drop(struct zram *zram, u32 index);
+#else
+static inline void zram_prefetch_cache_init(struct zram *zram) {};
+static inline void zram_prefetch_cache_destroy(struct zram *zram) {};
+static inline bool zram_prefetch_cache_exist(struct zram *zram, u32 index)
+{
+	return false;
+}
+
+static inline int zram_prefetch_cache_store(struct zram *zram, u32 index,
+					    unsigned long blk_idx)
+{
+	return 0; /* unsupported */
+}
+
+static inline int zram_prefetch_cache_reuse(struct zram *zram, u32 index)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline int zram_prefetch_cache_drop(struct zram *zram, u32 index)
+{
+	return -EOPNOTSUPP;
+}
+#endif
+
 #endif

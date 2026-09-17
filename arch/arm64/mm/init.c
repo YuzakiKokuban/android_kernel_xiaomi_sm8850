@@ -320,7 +320,7 @@ void __init arm64_memblock_init(void)
 	 * Register the kernel text, kernel data, initrd, and initial
 	 * pagetables with memblock.
 	 */
-	memblock_reserve(__pa_symbol(_stext), _end - _stext);
+	memblock_reserve(__pa_symbol(_text), _end - _text);
 	if (IS_ENABLED(CONFIG_BLK_DEV_INITRD) && phys_initrd_size) {
 		/* the generic initrd code expects virtual addresses */
 		initrd_start = __phys_to_virt(phys_initrd_start);
@@ -459,8 +459,8 @@ void dump_mem_limit(void)
 }
 
 #ifdef CONFIG_EXECMEM
-static u64 module_direct_base __ro_after_init = 0;
-static u64 module_plt_base __ro_after_init = 0;
+u64 module_direct_base __ro_after_init;
+u64 module_plt_base __ro_after_init;
 
 /*
  * Choose a random page-aligned base address for a window of 'size' bytes which

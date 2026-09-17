@@ -42,6 +42,40 @@ static bool nointxmask;
 static bool disable_vga;
 static bool disable_idle_d3;
 
+static void vfio_pci_eventfd_rcu_free(struct rcu_head *rcu)
+{
+	struct vfio_pci_eventfd *eventfd =
+		container_of(rcu, struct vfio_pci_eventfd, rcu);
+
+	eventfd_ctx_put(eventfd->ctx);
+	kfree(eventfd);
+}
+
+int vfio_pci_eventfd_replace_locked(struct vfio_pci_core_device *vdev,
+				    struct vfio_pci_eventfd __rcu **peventfd,
+				    struct eventfd_ctx *ctx)
+{
+	struct vfio_pci_eventfd *new = NULL;
+	struct vfio_pci_eventfd *old;
+
+	lockdep_assert_held(&vdev->igate);
+
+	if (ctx) {
+		new = kzalloc(sizeof(*new), GFP_KERNEL_ACCOUNT);
+		if (!new)
+			return -ENOMEM;
+
+		new->ctx = ctx;
+	}
+
+	old = rcu_replace_pointer(*peventfd, new,
+				  lockdep_is_held(&vdev->igate));
+	if (old)
+		call_rcu(&old->rcu, vfio_pci_eventfd_rcu_free);
+
+	return 0;
+}
+
 /* List of PF's that vfio_pci_core_sriov_configure() has been called on */
 static DEFINE_MUTEX(vfio_pci_sriov_pfs_mutex);
 static LIST_HEAD(vfio_pci_sriov_pfs);
@@ -697,14 +731,8 @@ void vfio_pci_core_close_device(struct vfio_device *core_vdev)
 	vfio_pci_core_disable(vdev);
 
 	mutex_lock(&vdev->igate);
-	if (vdev->err_trigger) {
-		eventfd_ctx_put(vdev->err_trigger);
-		vdev->err_trigger = NULL;
-	}
-	if (vdev->req_trigger) {
-		eventfd_ctx_put(vdev->req_trigger);
-		vdev->req_trigger = NULL;
-	}
+	vfio_pci_eventfd_replace_locked(vdev, &vdev->err_trigger, NULL);
+	vfio_pci_eventfd_replace_locked(vdev, &vdev->req_trigger, NULL);
 	mutex_unlock(&vdev->igate);
 }
 EXPORT_SYMBOL_GPL(vfio_pci_core_close_device);
@@ -727,15 +755,7 @@ EXPORT_SYMBOL_GPL(vfio_pci_core_finish_enable);
 static int vfio_pci_get_irq_count(struct vfio_pci_core_device *vdev, int irq_type)
 {
 	if (irq_type == VFIO_PCI_INTX_IRQ_INDEX) {
-		u8 pin;
-
-		if (!IS_ENABLED(CONFIG_VFIO_PCI_INTX) ||
-		    vdev->nointx || vdev->pdev->is_virtfn)
-			return 0;
-
-		pci_read_config_byte(vdev->pdev, PCI_INTERRUPT_PIN, &pin);
-
-		return pin ? 1 : 0;
+		return vdev->vconfig[PCI_INTERRUPT_PIN] ? 1 : 0;
 	} else if (irq_type == VFIO_PCI_MSI_IRQ_INDEX) {
 		u8 pos;
 		u16 flags;
@@ -1658,14 +1678,14 @@ static vm_fault_t vfio_pci_mmap_huge_fault(struct vm_fault *vmf,
 {
 	struct vm_area_struct *vma = vmf->vma;
 	struct vfio_pci_core_device *vdev = vma->vm_private_data;
-	unsigned long pfn, pgoff = vmf->pgoff - vma->vm_pgoff;
+	unsigned long addr = vmf->address & ~((PAGE_SIZE << order) - 1);
+	unsigned long pgoff = (addr - vma->vm_start) >> PAGE_SHIFT;
+	unsigned long pfn = vma_to_pfn(vma) + pgoff;
 	vm_fault_t ret = VM_FAULT_SIGBUS;
 
-	pfn = vma_to_pfn(vma) + pgoff;
-
-	if (order && (pfn & ((1 << order) - 1) ||
-		      vmf->address & ((PAGE_SIZE << order) - 1) ||
-		      vmf->address + (PAGE_SIZE << order) > vma->vm_end)) {
+	if (order && (addr < vma->vm_start ||
+		      addr + (PAGE_SIZE << order) > vma->vm_end ||
+		      pfn & ((1 << order) - 1))) {
 		ret = VM_FAULT_FALLBACK;
 		goto out;
 	}
@@ -1815,21 +1835,21 @@ void vfio_pci_core_request(struct vfio_device *core_vdev, unsigned int count)
 	struct vfio_pci_core_device *vdev =
 		container_of(core_vdev, struct vfio_pci_core_device, vdev);
 	struct pci_dev *pdev = vdev->pdev;
+	struct vfio_pci_eventfd *eventfd;
 
-	mutex_lock(&vdev->igate);
-
-	if (vdev->req_trigger) {
+	rcu_read_lock();
+	eventfd = rcu_dereference(vdev->req_trigger);
+	if (eventfd) {
 		if (!(count % 10))
 			pci_notice_ratelimited(pdev,
 				"Relaying device request to user (#%u)\n",
 				count);
-		eventfd_signal(vdev->req_trigger);
+		eventfd_signal(eventfd->ctx);
 	} else if (count == 0) {
 		pci_warn(pdev,
 			"No device request channel registered, blocked until released by user\n");
 	}
-
-	mutex_unlock(&vdev->igate);
+	rcu_read_unlock();
 }
 EXPORT_SYMBOL_GPL(vfio_pci_core_request);
 
@@ -2161,7 +2181,7 @@ int vfio_pci_core_register_device(struct vfio_pci_core_device *vdev)
 		return -EBUSY;
 	}
 
-	if (pci_is_root_bus(pdev->bus)) {
+	if (pci_is_root_bus(pdev->bus) || pdev->is_virtfn) {
 		ret = vfio_assign_device_set(&vdev->vdev, vdev);
 	} else if (!pci_probe_reset_slot(pdev->slot)) {
 		ret = vfio_assign_device_set(&vdev->vdev, pdev->slot);
@@ -2236,13 +2256,13 @@ pci_ers_result_t vfio_pci_core_aer_err_detected(struct pci_dev *pdev,
 						pci_channel_state_t state)
 {
 	struct vfio_pci_core_device *vdev = dev_get_drvdata(&pdev->dev);
+	struct vfio_pci_eventfd *eventfd;
 
-	mutex_lock(&vdev->igate);
-
-	if (vdev->err_trigger)
-		eventfd_signal(vdev->err_trigger);
-
-	mutex_unlock(&vdev->igate);
+	rcu_read_lock();
+	eventfd = rcu_dereference(vdev->err_trigger);
+	if (eventfd)
+		eventfd_signal(eventfd->ctx);
+	rcu_read_unlock();
 
 	return PCI_ERS_RESULT_CAN_RECOVER;
 }

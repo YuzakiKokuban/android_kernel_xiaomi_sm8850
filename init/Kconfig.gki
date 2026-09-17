@@ -4,6 +4,10 @@ config GKI_HIDDEN_DRM_CONFIGS
 	select DRM_GEM_SHMEM_HELPER if (DRM)
 	select DRM_MIPI_DSI
 	select DRM_TTM if (HAS_IOMEM && DRM)
+	select DRM_BRIDGE_CONNECTOR
+	select DRM_DISPLAY_DP_HELPER
+	select DRM_DISPLAY_HDCP_HELPER
+	select DRM_DISPLAY_HDMI_HELPER
 	select VIDEOMODE_HELPERS
 	select WANT_DEV_COREDUMP
 	select INTERVAL_TREE
@@ -108,6 +112,17 @@ config GKI_HIDDEN_QCOM_CONFIGS
 	  Dummy config option used to enable hidden QCOM configs.
 	  These are normally selected implicitly when a module
 	  that relies on it is configured.
+
+config GKI_HIDDEN_MTK_CONFIGS
+	bool "Hidden MTK configs needed for GKI"
+	select MTK_TIMER
+	help
+	  This dummy config option is used to enable hidden MediaTek (MTK)
+	  configs required for GKI. Specifically, it selects MTK_TIMER.
+	  These configurations are normally selected implicitly when an
+	  in-tree module or driver that depends on them is enabled.
+	  However, for GKI, modules are often built out-of-tree, meaning
+	  these implicit selections do not occur, necessitating this option.
 
 config GKI_HIDDEN_MEDIA_CONFIGS
 	bool "Hidden Media configs needed for GKI"
@@ -294,6 +309,7 @@ config GKI_HACKS_TO_FIX
 	select GKI_HIDDEN_MMC_CONFIGS
 	select GKI_HIDDEN_GPIO_CONFIGS
 	select GKI_HIDDEN_QCOM_CONFIGS
+	select GKI_HIDDEN_MTK_CONFIGS if (ARM64)
 	select GKI_LEGACY_WEXT_ALLCONFIG
 	select GKI_HIDDEN_MEDIA_CONFIGS
 	select GKI_HIDDEN_VIRTUAL_CONFIGS

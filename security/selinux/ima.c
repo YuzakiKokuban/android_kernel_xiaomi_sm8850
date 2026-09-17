@@ -30,6 +30,13 @@ static char *selinux_ima_collect_state(void)
 	for (i = 0; i < __POLICYDB_CAP_MAX; i++)
 		buf_len += strlen(selinux_policycap_names[i]) + len;
 
+	/*
+	 * ANDROID: backported capabilities are handled separately from the rest of
+	 * the policycaps to preserve the ABI.
+	 */
+	buf_len += strlen(POLICYDB_CAP_GENFS_SECLABEL_WILDCARD_NAME) + len;
+	buf_len += strlen(POLICYDB_CAP_MEMFD_CLASS_NAME) + len;
+
 	buf = kzalloc(buf_len, GFP_KERNEL);
 	if (!buf)
 		return NULL;
@@ -60,6 +67,23 @@ static char *selinux_ima_collect_state(void)
 			buf_len);
 		WARN_ON(rc >= buf_len);
 	}
+
+	/*
+	 * ANDROID: handle backported capabilities separately from the rest of
+	 * the policycaps to preserve the ABI.
+	 */
+	rc = strlcat(buf, POLICYDB_CAP_GENFS_SECLABEL_WILDCARD_NAME, buf_len);
+	WARN_ON(rc >= buf_len);
+
+	rc = strlcat(buf, selinux_seclabel_wildcard_policycap ? on : off,
+		     buf_len);
+	WARN_ON(rc >= buf_len);
+
+	rc = strlcat(buf, POLICYDB_CAP_MEMFD_CLASS_NAME, buf_len);
+	WARN_ON(rc >= buf_len);
+
+	rc = strlcat(buf, selinux_memfd_class_policycap ? on : off, buf_len);
+	WARN_ON(rc >= buf_len);
 
 	return buf;
 }

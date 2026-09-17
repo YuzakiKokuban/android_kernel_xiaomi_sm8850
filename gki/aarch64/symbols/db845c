@@ -104,6 +104,7 @@
   _dev_err
   dev_err_probe
   __dev_fwnode
+  __dev_fwnode_const
   dev_get_regmap
   device_add
   device_del
@@ -214,6 +215,7 @@
   dev_pm_set_wake_irq
   devres_add
   __devres_alloc_node
+  devres_free
   dev_set_name
   _dev_warn
   disable_irq
@@ -302,6 +304,7 @@
   free_io_pgtable_ops
   free_irq
   free_netdev
+  fwnode_property_match_string
   fwnode_property_present
   fwnode_property_read_u32_array
   fwnode_typec_mux_get
@@ -990,6 +993,8 @@
   dev_set_threaded
 
 # required by ath11k.ko
+  dma_alloc_pages
+  dma_free_pages
   memset32
   rhashtable_destroy
   rhashtable_init_noprof
@@ -1140,9 +1145,12 @@
   drmm_connector_init
   drm_mode_object_put
   drm_modeset_lock_single_interruptible
+  drm_object_attach_property
   drm_object_property_set_value
   drm_panel_bridge_set_orientation
   __drm_printfn_dbg
+  drm_property_create_enum
+  drm_sysfs_connector_property_event
   fwnode_handle_get
   guid_null
   hdmi_drm_infoframe_init
@@ -1227,10 +1235,8 @@
   register_chrdev_region
 
 # required by i2c-mux-pca954x.ko
-  __dev_fwnode_const
   device_create_file
   device_remove_file
-  fwnode_property_match_string
   i2c_client_get_device_id
   i2c_get_device_id
   i2c_smbus_read_byte
@@ -1609,6 +1615,7 @@
   drm_writeback_queue_job
   drm_writeback_signal_completion
   fd_install
+  fput
   get_pid_task
   get_unused_fd_flags
   hdmi_audio_infoframe_pack
@@ -1675,6 +1682,7 @@
   vm_get_page_prot
   vscnprintf
   wake_up_process
+  ww_mutex_trylock
 
 # required by msm_serial.ko
   do_SAK
@@ -1802,6 +1810,7 @@
 
 # required by pinctrl-msm.ko
   device_property_read_u16_array
+  devm_register_sys_off_handler
   gpiochip_line_is_valid
   gpiochip_lock_as_irq
   gpiochip_unlock_as_irq
@@ -1810,9 +1819,7 @@
   pinctrl_force_default
   pinctrl_force_sleep
   pm_power_off
-  register_restart_handler
   try_module_get
-  unregister_restart_handler
 
 # required by pinctrl-spmi-mpp.ko
   gpiochip_populate_parent_fwspec_fourcell
@@ -2031,7 +2038,6 @@
   __xa_insert
 
 # required by reboot-mode.ko
-  devres_free
   devres_release
 
 # required by rmtfs_mem.ko
@@ -2084,6 +2090,7 @@
   device_find_child
 
 # required by smem.ko
+  devm_hwspin_lock_request_specific
   hwspin_lock_bust
   hwspin_lock_free
   hwspin_lock_request_specific
@@ -2142,6 +2149,7 @@
   snd_soc_dapm_put_pin_switch
 
 # required by snd-soc-wcd9335.ko
+  devm_regulator_bulk_get_enable
   kmemdup_nul
 
 # required by snd-soc-wcd939x-sdw.ko

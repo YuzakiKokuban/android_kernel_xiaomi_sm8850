@@ -76,6 +76,7 @@ impl<B: GlobalLockBackend> GlobalLock<B> {
     }
 
     /// Lock this global lock.
+    #[inline]
     pub fn lock(&'static self) -> GlobalGuard<B> {
         GlobalGuard {
             inner: self.inner.lock(),
@@ -83,6 +84,7 @@ impl<B: GlobalLockBackend> GlobalLock<B> {
     }
 
     /// Try to lock this global lock.
+    #[inline]
     pub fn try_lock(&'static self) -> Option<GlobalGuard<B>> {
         Some(GlobalGuard {
             inner: self.inner.try_lock()?,

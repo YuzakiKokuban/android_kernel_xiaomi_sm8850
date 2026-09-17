@@ -20,6 +20,7 @@ struct gunyah_vm;
 
 int __must_check gunyah_vm_get(struct gunyah_vm *ghvm);
 void gunyah_vm_put(struct gunyah_vm *ghvm);
+int gunyah_reclaim_fw_parcel(struct gunyah_vm *ghvm, u32 mem_handle);
 
 /**
  * struct gunyah_auth_vm_mgr_ops - Auth VM Mgr helper ops
@@ -425,6 +426,8 @@ enum gunyah_info_owner {
 };
 
 void *gunyah_get_info(u16 owner, u16 id, size_t *size);
+int gunyah_map_addrspace_info_area(void);
+void gunyah_unmap_addrspace_info_area(void);
 
 #define GUNYAH_API_V1 1
 

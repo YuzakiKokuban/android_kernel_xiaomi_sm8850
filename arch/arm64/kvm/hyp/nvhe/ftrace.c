@@ -126,6 +126,13 @@ void hyp_ftrace_ret_flush(void)
 	}
 }
 
+unsigned long hyp_ftrace_ret_pop(void)
+{
+	struct hyp_ftrace_stack_frame *frame = hyp_ftrace_func_pop();
+
+	return frame ? frame->ret : ULONG_MAX;
+}
+
 static int __get_offset_idx_ins(unsigned long *func, unsigned long ip, u32 *insn,
 				void *args)
 {
@@ -251,7 +258,7 @@ end:
 
 phys_addr_t __get_phys(unsigned long addr)
 {
-	if (addr >= (unsigned long)__hyp_text_start)
+	if (addr >= (unsigned long)__hyp_text_start && addr < (unsigned long)__hyp_text_end)
 		return __hyp_pa(addr);
 
 	return __pkvm_private_range_pa((void *)addr);

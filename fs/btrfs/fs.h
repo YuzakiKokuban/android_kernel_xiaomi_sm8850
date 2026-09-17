@@ -285,6 +285,7 @@ enum {
 #define BTRFS_FEATURE_INCOMPAT_SAFE_CLEAR		0ULL
 
 #define BTRFS_DEFAULT_COMMIT_INTERVAL	(30)
+#define BTRFS_WARNING_COMMIT_INTERVAL	(300)
 #define BTRFS_DEFAULT_MAX_INLINE	(2048)
 
 struct btrfs_dev_replace {
@@ -638,6 +639,8 @@ struct btrfs_fs_info {
 	spinlock_t extent_map_shrinker_lock;
 	u64 extent_map_shrinker_last_root;
 	u64 extent_map_shrinker_last_ino;
+	atomic64_t extent_map_shrinker_nr_to_scan;
+	struct work_struct extent_map_shrinker_work;
 
 	/* Protected by 'trans_lock'. */
 	struct list_head dirty_cowonly_roots;
@@ -705,7 +708,6 @@ struct btrfs_fs_info {
 	 * running.
 	 */
 	refcount_t scrub_workers_refcnt;
-	u32 sectors_per_page;
 	struct workqueue_struct *scrub_workers;
 
 	struct btrfs_discard_ctl discard_ctl;
@@ -971,6 +973,12 @@ static inline u32 count_max_extents(const struct btrfs_fs_info *fs_info, u64 siz
 #endif
 
 	return div_u64(size + fs_info->max_extent_size - 1, fs_info->max_extent_size);
+}
+
+static inline unsigned int btrfs_blocks_per_folio(const struct btrfs_fs_info *fs_info,
+						  const struct folio *folio)
+{
+	return folio_size(folio) >> fs_info->sectorsize_bits;
 }
 
 bool btrfs_exclop_start(struct btrfs_fs_info *fs_info,

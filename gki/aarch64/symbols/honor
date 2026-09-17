@@ -45,6 +45,8 @@
   __pmd_trans_huge_lock
   __pte_offset_map_lock
   __show_mem
+  __traceiter_android_vh_page_cache_ra_order_bypass
+  __tracepoint_android_vh_page_cache_ra_order_bypass
   __traceiter_android_vh_slab_alloc_node
   __tracepoint_android_vh_slab_alloc_node
   __traceiter_android_vh_slab_free
@@ -93,6 +95,8 @@
   __traceiter_android_vh_cma_alloc_retry
   __traceiter_android_vh_get_page_wmark
   __traceiter_android_vh_killed_process
+  __traceiter_android_vh_oom_reaper_delay_bypass
+  __traceiter_android_vh_thaw_killed_process
   __traceiter_android_vh_kvmalloc_node_use_vmalloc
   __traceiter_android_vh_mem_cgroup_alloc
   __traceiter_android_vh_mem_cgroup_css_offline
@@ -117,6 +121,8 @@
   __tracepoint_android_vh_cma_alloc_retry
   __tracepoint_android_vh_get_page_wmark
   __tracepoint_android_vh_killed_process
+  __tracepoint_android_vh_oom_reaper_delay_bypass
+  __tracepoint_android_vh_thaw_killed_process
   __tracepoint_android_vh_kvmalloc_node_use_vmalloc
   __tracepoint_android_vh_mem_cgroup_alloc
   __tracepoint_android_vh_mem_cgroup_css_online
@@ -215,6 +221,8 @@
   __traceiter_android_vh_compact_finished
   __tracepoint_android_vh_madvise_cold_or_pageout_abort
   __tracepoint_android_vh_compact_finished
+  __traceiter_android_vh_folio_add_lru
+  __tracepoint_android_vh_folio_add_lru
   netdev_get_name
   tcp_send_active_reset
   __traceiter_android_vh_tcp_write_timeout_estab_retrans
@@ -576,4 +584,7 @@
   __traceiter_android_vh_append_total_power
   __traceiter_android_rvh_dpm_prepare
   __tracepoint_android_rvh_dpm_prepare
+  sk_net_refcnt_upgrade
+  d_delete
+  filemap_fdatawrite_range_kick
 

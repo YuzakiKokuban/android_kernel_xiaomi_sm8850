@@ -3,7 +3,6 @@
 #ifndef __CPUSET_INTERNAL_H
 #define __CPUSET_INTERNAL_H
 
-#include <linux/android_kabi.h>
 #include <linux/cgroup.h>
 #include <linux/cpu.h>
 #include <linux/cpumask.h>
@@ -34,6 +33,7 @@ enum prs_errcode {
 	PERR_CPUSEMPTY,
 	PERR_HKEEPING,
 	PERR_ACCESS,
+	PERR_REMOTE,
 };
 
 /* bits in struct cpuset flags field */

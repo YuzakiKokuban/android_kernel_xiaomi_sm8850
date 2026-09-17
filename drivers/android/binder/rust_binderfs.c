@@ -33,6 +33,7 @@
 #include <uapi/linux/android/binder.h>
 #include <uapi/linux/android/binderfs.h>
 
+#include "rust_binder.h"
 #include "rust_binder_internal.h"
 
 #define FIRST_INODE 1
@@ -67,6 +68,7 @@ enum binderfs_stats_mode {
 struct binder_features {
 	bool oneway_spam_detection;
 	bool extended_error;
+	bool freeze_notification;
 };
 
 static const struct constant_table binderfs_param_stats[] = {
@@ -83,19 +85,12 @@ static const struct fs_parameter_spec binderfs_fs_parameters[] = {
 static struct binder_features binder_features = {
 	.oneway_spam_detection = true,
 	.extended_error = true,
+	.freeze_notification = true,
 };
 
 static inline struct binderfs_info *BINDERFS_SB(const struct super_block *sb)
 {
 	return sb->s_fs_info;
-}
-
-bool is_rust_binderfs_device(const struct inode *inode)
-{
-	if (inode->i_sb->s_magic == RUST_BINDERFS_SUPER_MAGIC)
-		return true;
-
-	return false;
 }
 
 /**
@@ -137,8 +132,8 @@ static int binderfs_binder_device_create(struct inode *ref_inode,
 	mutex_lock(&binderfs_minors_mutex);
 	if (++info->device_count <= info->mount_opts.max)
 		minor = ida_alloc_max(&binderfs_minors,
-				      use_reserve ? BINDERFS_MAX_MINOR :
-						    BINDERFS_MAX_MINOR_CAPPED,
+				      use_reserve ? BINDERFS_MAX_MINOR - 1 :
+						    BINDERFS_MAX_MINOR_CAPPED - 1,
 				      GFP_KERNEL);
 	else
 		minor = -ENOSPC;
@@ -421,8 +416,8 @@ static int binderfs_binder_ctl_create(struct super_block *sb)
 	/* Reserve a new minor number for the new device. */
 	mutex_lock(&binderfs_minors_mutex);
 	minor = ida_alloc_max(&binderfs_minors,
-			      use_reserve ? BINDERFS_MAX_MINOR :
-					    BINDERFS_MAX_MINOR_CAPPED,
+			      use_reserve ? BINDERFS_MAX_MINOR - 1 :
+					    BINDERFS_MAX_MINOR_CAPPED - 1,
 			      GFP_KERNEL);
 	mutex_unlock(&binderfs_minors_mutex);
 	if (minor < 0) {
@@ -510,9 +505,9 @@ void rust_binderfs_remove_file(struct dentry *dentry)
 	inode_unlock(parent_inode);
 }
 
-struct dentry *rust_binderfs_create_file(struct dentry *parent, const char *name,
-					 const struct file_operations *fops,
-					 void *data)
+static struct dentry *rust_binderfs_create_file(struct dentry *parent, const char *name,
+						const struct file_operations *fops,
+						void *data)
 {
 	struct dentry *dentry;
 	struct inode *new_inode, *parent_inode;
@@ -619,6 +614,12 @@ static int init_binder_features(struct super_block *sb)
 	dentry = rust_binderfs_create_file(dir, "extended_error",
 				      &binder_features_fops,
 				      &binder_features.extended_error);
+	if (IS_ERR(dentry))
+		return PTR_ERR(dentry);
+
+	dentry = rust_binderfs_create_file(dir, "freeze_notification",
+				      &binder_features_fops,
+				      &binder_features.freeze_notification);
 	if (IS_ERR(dentry))
 		return PTR_ERR(dentry);
 

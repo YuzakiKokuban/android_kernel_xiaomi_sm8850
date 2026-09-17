@@ -5,6 +5,7 @@
 //
 // Exynos - CPU PMU(Power Management Unit) support
 
+#include <linux/array_size.h>
 #include <linux/arm-smccc.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
@@ -320,6 +321,8 @@ struct regmap *exynos_get_pmu_regmap_by_phandle(struct device_node *np,
 
 	if (!dev)
 		return ERR_PTR(-EPROBE_DEFER);
+
+	put_device(dev);
 
 	return syscon_node_to_regmap(pmu_np);
 }

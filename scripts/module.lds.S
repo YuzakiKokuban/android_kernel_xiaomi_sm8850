@@ -65,12 +65,6 @@ SECTIONS {
 	}
 #endif
 
-#if defined(CONFIG_LTO_CLANG) || defined(CONFIG_CRYPTO_FIPS140_MERGE_MOD_SECTIONS)
-	/*
-	 * With CONFIG_LTO_CLANG, LLD always enables -fdata-sections and
-	 * -ffunction-sections, which increases the size of the final module.
-	 * Merge the split sections in the final binary.
-	 */
 	.bss : {
 		*(.bss .bss.[0-9a-zA-Z_]*)
 		*(.bss..L*)
@@ -79,7 +73,6 @@ SECTIONS {
 	.data : {
 		*(.data .data.[0-9a-zA-Z_]*)
 		*(.data..L*)
-		MOD_CODETAG_SECTIONS()
 	}
 
 	.rodata : {
@@ -95,11 +88,7 @@ SECTIONS {
 		*(.text.._end)
 		*(.text.._fips140_unchecked)
 	}
-#else
-	.data : {
-		MOD_CODETAG_SECTIONS()
-	}
-#endif
+
 	MOD_SEPARATE_CODETAG_SECTIONS()
 }
 

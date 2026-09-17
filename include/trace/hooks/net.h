@@ -18,12 +18,6 @@ enum tcp_state_change_reason {
 };
 #endif
 
-struct packet_type;
-struct list_head;
-DECLARE_HOOK(android_vh_ptype_head,
-	TP_PROTO(const struct packet_type *pt, struct list_head *vendor_pt),
-	TP_ARGS(pt, vendor_pt));
-
 struct sock;
 struct sockaddr_in6;
 struct tcp_sock;
@@ -129,6 +123,10 @@ DECLARE_HOOK(android_vh_udp_enqueue_schedule_skb,
 	TP_PROTO(struct sock *sk, struct sk_buff *skb), TP_ARGS(sk, skb));
 DECLARE_HOOK(android_vh_build_skb_around,
 	TP_PROTO(struct sk_buff *skb), TP_ARGS(skb));
+struct inet_frag_queue;
+DECLARE_HOOK(android_vh_reasm_timer_adjust,
+	TP_PROTO(struct inet_frag_queue *q, struct sk_buff *skb),
+	TP_ARGS(q, skb));
 
 /* macro versions of hooks are no longer required */
 

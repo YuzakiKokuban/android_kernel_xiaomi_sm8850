@@ -253,13 +253,10 @@ static inline kvm_pte_t *kvm_pte_follow(kvm_pte_t pte, struct kvm_pgtable_mm_ops
  * @KVM_PGTABLE_S2_NOFWB:	Don't enforce Normal-WB even if the CPUs have
  *				ARM64_HAS_STAGE2_FWB.
  * @KVM_PGTABLE_S2_IDMAP:	Only use identity mappings.
- * @KVM_PGTABLE_S2_PREFAULT_BLOCK:
- * 				Prefault a table, when a block is broken down.
  */
 enum kvm_pgtable_stage2_flags {
 	KVM_PGTABLE_S2_NOFWB			= BIT(0),
 	KVM_PGTABLE_S2_IDMAP			= BIT(1),
-	KVM_PGTABLE_S2_PREFAULT_BLOCK		= BIT(2),
 };
 
 /**
@@ -364,8 +361,8 @@ struct kvm_pgtable_pte_ops {
  *					children.
  * @KVM_PGTABLE_WALK_SHARED:		Indicates the page-tables may be shared
  *					with other software walkers.
- * @KVM_PGTABLE_WALK_HANDLE_FAULT:	Indicates the page-table walk was
- *					invoked from a fault handler.
+ * @KVM_PGTABLE_WALK_IGNORE_EAGAIN:	Don't terminate the walk early if
+ *					the walker returns -EAGAIN.
  * @KVM_PGTABLE_WALK_SKIP_BBM_TLBI:	Visit and update table entries
  *					without Break-before-make's
  *					TLB invalidation.
@@ -378,7 +375,7 @@ enum kvm_pgtable_walk_flags {
 	KVM_PGTABLE_WALK_TABLE_PRE		= BIT(1),
 	KVM_PGTABLE_WALK_TABLE_POST		= BIT(2),
 	KVM_PGTABLE_WALK_SHARED			= BIT(3),
-	KVM_PGTABLE_WALK_HANDLE_FAULT		= BIT(4),
+	KVM_PGTABLE_WALK_IGNORE_EAGAIN		= BIT(4),
 	KVM_PGTABLE_WALK_SKIP_BBM_TLBI		= BIT(5),
 	KVM_PGTABLE_WALK_SKIP_CMO		= BIT(6),
 };
@@ -866,8 +863,7 @@ int kvm_pgtable_stage2_flush(struct kvm_pgtable *pgt, u64 addr, u64 size);
  * kvm_pgtable_stage2_split() is best effort: it tries to break as many
  * blocks in the input range as allowed by @mc_capacity.
  */
-int kvm_pgtable_stage2_split(struct kvm_pgtable *pgt, u64 addr, u64 size,
-			     struct kvm_mmu_memory_cache *mc);
+int kvm_pgtable_stage2_split(struct kvm_pgtable *pgt, u64 addr, u64 size, void *mc);
 
 /**
  * kvm_pgtable_walk() - Walk a page-table.
@@ -942,27 +938,4 @@ enum kvm_pgtable_prot kvm_pgtable_hyp_pte_prot(kvm_pte_t pte);
  */
 void kvm_tlb_flush_vmid_range(struct kvm_s2_mmu *mmu,
 				phys_addr_t addr, size_t size);
-
-/**
- * kvm_pgtable_stage2_get_pages() - Raise the refcount for each entry and unmap them.
- *
- * @pgt:	Page-table structure initialised by kvm_pgtable_*_init()
- *		or a similar initialiser.
- * @addr:	Input address for the start of the walk.
- * @size:	Size of the range.
- * @mc:		Cache of pre-allocated and zeroed memory from which to allocate
- *		page-table pages.
- */
-int kvm_pgtable_stage2_get_pages(struct kvm_pgtable *pgt, u64 addr, u64 size, void *mc);
-
-/**
- * kvm_pgtable_stage2_put_pages() - Drop the refcount for each entry. This is the
- *			     opposite of kvm_pgtable_get_pages().
- *
- * @pgt:	Page-table structure initialised by kvm_pgtable_*_init()
- *		or a similar initialiser.
- * @addr:	Input address for the start of the walk.
- * @size:	Size of the range.
- */
-int kvm_pgtable_stage2_put_pages(struct kvm_pgtable *pgt, u64 addr, u64 size);
 #endif	/* __ARM64_KVM_PGTABLE_H__ */

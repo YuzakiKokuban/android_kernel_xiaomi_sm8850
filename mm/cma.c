@@ -45,10 +45,13 @@
 
 EXPORT_TRACEPOINT_SYMBOL_GPL(cma_alloc_start);
 EXPORT_TRACEPOINT_SYMBOL_GPL(cma_alloc_finish);
+EXPORT_TRACEPOINT_SYMBOL_GPL(cma_alloc_busy_retry);
+EXPORT_TRACEPOINT_SYMBOL_GPL(cma_release);
 
 struct cma cma_areas[MAX_CMA_AREAS];
 unsigned cma_area_count;
-static DEFINE_MUTEX(cma_mutex);
+DEFINE_MUTEX(cma_mutex);
+EXPORT_SYMBOL_GPL(cma_mutex);
 
 phys_addr_t cma_get_base(const struct cma *cma)
 {
@@ -443,6 +446,7 @@ struct page *__cma_alloc(struct cma *cma, unsigned long count,
 	int num_attempts = 0;
 	int max_retries = 5;
 	bool bypass = false;
+	u64 stime = 0;
 
 	if (WARN_ON_ONCE((gfp & GFP_KERNEL) == 0 ||
 		(gfp & ~(GFP_KERNEL|__GFP_NOWARN|__GFP_NORETRY)) != 0))
@@ -475,6 +479,7 @@ struct page *__cma_alloc(struct cma *cma, unsigned long count,
 		return page;
 
 	trace_android_vh_cma_alloc_retry(cma->name, &max_retries);
+	trace_android_vh_cma_alloc_lat_start(&stime);
 	for (;;) {
 		spin_lock_irq(&cma->lock);
 		bitmap_no = bitmap_find_next_zero_area_off(cma->bitmap,
@@ -565,6 +570,8 @@ struct page *__cma_alloc(struct cma *cma, unsigned long count,
 	pr_debug("%s(): returned %p\n", __func__, page);
 	trace_cma_alloc_finish(name, pfn, page, count, align, ret);
 	trace_android_vh_cma_alloc_finish(cma);
+	trace_android_vh_cma_alloc_end(cma, pfn, page, count, align, ret);
+	trace_android_vh_cma_alloc_lat_end(stime, count);
 
 	if (page) {
 		count_vm_event(CMA_ALLOC_SUCCESS);
@@ -640,6 +647,7 @@ bool cma_release(struct cma *cma, const struct page *pages,
 		 unsigned long count)
 {
 	unsigned long pfn;
+	bool bypass = false;
 
 	if (!cma_pages_valid(cma, pages, count))
 		return false;
@@ -649,6 +657,10 @@ bool cma_release(struct cma *cma, const struct page *pages,
 	pfn = page_to_pfn(pages);
 
 	VM_BUG_ON(pfn + count > cma->base_pfn + cma->count);
+
+	trace_android_vh_cma_release_bypass(cma, pages, count, &bypass);
+	if (bypass)
+		return true;
 
 	if (cma->gcma)
 		gcma_free_range(pfn, pfn + count - 1);

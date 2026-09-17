@@ -204,6 +204,7 @@ struct sched_ext_entity {
 
 void sched_ext_free(struct task_struct *p);
 void print_scx_info(const char *log_lvl, struct task_struct *p);
+struct scx_dispatch_q *find_user_dsq(u64 dsq_id);
 
 #else	/* !CONFIG_SCHED_CLASS_EXT */
 

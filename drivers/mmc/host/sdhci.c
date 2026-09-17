@@ -31,6 +31,9 @@
 #include <linux/mmc/card.h>
 #include <linux/mmc/sdio.h>
 #include <linux/mmc/slot-gpio.h>
+#include <linux/android_kabi.h>
+#include <trace/hooks/mmc.h>
+ANDROID_KABI_DECLONLY(trace_eval_map);
 
 #include "sdhci.h"
 
@@ -2478,7 +2481,7 @@ static int sdhci_get_cd(struct mmc_host *mmc)
 	/* If nonremovable, assume that the card is always present. */
 	if (!mmc_card_is_removable(mmc))
 		return 1;
-
+	trace_android_vh_sdhci_get_cd(host);
 	/*
 	 * Try slot gpio detect, if defined it take precedence
 	 * over build in controller functionality

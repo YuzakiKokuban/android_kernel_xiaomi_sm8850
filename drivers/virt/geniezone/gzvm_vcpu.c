@@ -9,9 +9,9 @@
 #include <linux/mm.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
-
-#include <trace/events/geniezone.h>
 #include <linux/soc/mediatek/gzvm_drv.h>
+#include <trace/events/geniezone.h>
+#include <trace/hooks/gzvm.h>
 
 /* maximum size needed for holding an integer */
 #define ITOA_MAX_LEN 12
@@ -193,6 +193,7 @@ static long gzvm_vcpu_run(struct gzvm_vcpu *vcpu, void __user *argp)
 			pr_err("vcpu unknown exit\n");
 			need_userspace = true;
 		}
+		trace_android_vh_gzvm_vcpu_exit_reason(vcpu, &need_userspace);
 	}
 
 	if (copy_to_user(argp, vcpu->run, sizeof(struct gzvm_vcpu_run)))
@@ -231,7 +232,16 @@ static long gzvm_vcpu_ioctl(struct file *filp, unsigned int ioctl,
 	return ret;
 }
 
+static int gzvm_vcpu_release(struct inode *inode, struct file *filp)
+{
+	struct gzvm_vcpu *vcpu = filp->private_data;
+
+	gzvm_vm_put(vcpu->gzvm);
+	return 0;
+}
+
 static const struct file_operations gzvm_vcpu_fops = {
+	.release	= gzvm_vcpu_release,
 	.unlocked_ioctl = gzvm_vcpu_ioctl,
 	.llseek		= noop_llseek,
 };
@@ -286,6 +296,8 @@ int gzvm_vm_ioctl_create_vcpu(struct gzvm *gzvm, u32 cpuid)
 {
 	struct gzvm_vcpu *vcpu;
 	int ret;
+
+	gzvm_vm_get(gzvm);
 
 	if (cpuid >= GZVM_MAX_VCPUS)
 		return -EINVAL;

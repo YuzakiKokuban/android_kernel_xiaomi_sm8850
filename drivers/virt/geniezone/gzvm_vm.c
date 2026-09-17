@@ -12,6 +12,7 @@
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/soc/mediatek/gzvm_drv.h>
+#include <trace/hooks/gzvm.h>
 #include "gzvm_common.h"
 
 static DEFINE_MUTEX(gzvm_list_lock);
@@ -359,6 +360,7 @@ static void gzvm_destroy_vm(struct gzvm *gzvm)
 	mutex_lock(&gzvm->lock);
 
 	gzvm_vm_irqfd_release(gzvm);
+	gzvm_vm_ioeventfd_release(gzvm);
 	gzvm_destroy_vcpus(gzvm);
 	gzvm_arch_destroy_vm(gzvm->vm_id, gzvm->gzvm_drv->destroy_batch_pages);
 
@@ -374,6 +376,8 @@ static void gzvm_destroy_vm(struct gzvm *gzvm)
 
 	mutex_unlock(&gzvm->lock);
 
+	trace_android_vh_gzvm_destroy_vm_post_process(gzvm);
+
 	/* No need to lock here becauese it's single-threaded execution */
 	gzvm_destroy_all_ppage(gzvm);
 
@@ -382,11 +386,29 @@ static void gzvm_destroy_vm(struct gzvm *gzvm)
 	kfree(gzvm);
 }
 
+static void __gzvm_vm_put(struct kref *kref)
+{
+	struct gzvm *gzvm = container_of(kref, struct gzvm, kref);
+
+	gzvm_destroy_vm(gzvm);
+}
+
+void gzvm_vm_put(struct gzvm *gzvm)
+{
+	kref_put(&gzvm->kref, __gzvm_vm_put);
+}
+
+void gzvm_vm_get(struct gzvm *gzvm)
+{
+	kref_get(&gzvm->kref);
+}
+
 static int gzvm_vm_release(struct inode *inode, struct file *filp)
 {
 	struct gzvm *gzvm = filp->private_data;
 
-	gzvm_destroy_vm(gzvm);
+	gzvm_vm_put(gzvm);
+
 	return 0;
 }
 
@@ -590,6 +612,8 @@ static struct gzvm *gzvm_create_vm(struct gzvm_driver *drv, unsigned long vm_typ
 	mutex_init(&gzvm->lock);
 	mutex_init(&gzvm->mem_lock);
 	gzvm->pinned_pages = RB_ROOT;
+
+	kref_init(&gzvm->kref);
 
 	ret = gzvm_vm_irqfd_init(gzvm);
 	if (ret) {

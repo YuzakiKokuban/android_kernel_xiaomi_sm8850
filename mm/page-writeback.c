@@ -545,8 +545,8 @@ static int dirty_ratio_handler(const struct ctl_table *table, int write, void *b
 
 	ret = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
 	if (ret == 0 && write && vm_dirty_ratio != old_ratio) {
-		writeback_set_ratelimit();
 		vm_dirty_bytes = 0;
+		writeback_set_ratelimit();
 	}
 	return ret;
 }
@@ -3166,6 +3166,7 @@ void __folio_start_writeback(struct folio *folio, bool keep_write)
 	lruvec_stat_mod_folio(folio, NR_WRITEBACK, nr);
 	zone_stat_mod_folio(folio, NR_ZONE_WRITE_PENDING, nr);
 	folio_memcg_unlock(folio);
+	trace_android_vh_folio_start_writeback(folio);
 
 	access_ret = arch_make_folio_accessible(folio);
 	/*

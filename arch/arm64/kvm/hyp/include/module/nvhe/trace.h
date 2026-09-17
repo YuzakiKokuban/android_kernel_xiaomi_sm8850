@@ -33,10 +33,11 @@ int register_hyp_mod_events(void *event_ids, size_t nr_events,
 
 void __pkvm_update_clock_tracing(u32 mult, u32 shift, u64 epoch_ns, u64 epoch_cyc);
 int __pkvm_load_tracing(unsigned long desc_va, size_t desc_size);
-void __pkvm_teardown_tracing(void);
+int __pkvm_teardown_tracing(void);
 int __pkvm_enable_tracing(bool enable);
 int __pkvm_reset_tracing(unsigned int cpu);
 int __pkvm_swap_reader_tracing(unsigned int cpu);
+void __pkvm_panic_tracing(void);
 int __pkvm_enable_event(unsigned short id, bool enable);
 
 extern struct hyp_printk_fmt __hyp_printk_fmts_start[];
@@ -81,7 +82,7 @@ do {							\
 #define trace_hyp_printk(fmt, ...) \
 	__trace_hyp_printk_N(fmt, __VA_ARGS__)
 
-#ifdef CONFIG_PROTECTED_NVHE_FTRACE
+#ifdef CONFIG_PKVM_FTRACE
 void hyp_ftrace_setup_core(void);
 unsigned long *hyp_ftrace_find_host_func(unsigned long host_func,
 					 unsigned long *funcs,
@@ -93,6 +94,7 @@ void *hyp_ftrace_sync(unsigned long *func_pg, unsigned long *funcs,
 int hyp_ftrace_setup(unsigned long *funcs, unsigned long *funcs_end,
 		     unsigned long hyp_kern_offset, void *tramp);
 void hyp_ftrace_ret_flush(void);
+unsigned long hyp_ftrace_ret_pop(void);
 void hyp_ftrace_disable(unsigned long *funcs, unsigned long *funcs_end);
 int __pkvm_sync_ftrace(unsigned long host_func_pg);
 int __pkvm_disable_ftrace(void);
@@ -105,7 +107,7 @@ static inline void hyp_ftrace_enable(unsigned long *funcs, unsigned long *funcs_
 		       bool enable, void *tramp) { }
 static inline int __pkvm_sync_ftrace(unsigned long host_func_pg) { return -EOPNOTSUPP; }
 static inline int __pkvm_disable_ftrace(void) { return -EOPNOTSUPP; }
-#endif /* CONFIG_PROTECTED_NVHE_FTRACE */
+#endif /* CONFIG_PKVM_FTRACE */
 #else /* CONFIG_TRACING */
 static inline int
 register_hyp_mod_events(void *event_ids, size_t nr_events, void *funcs, void *funcs_end,
@@ -123,10 +125,11 @@ static inline int register_hyp_event_ids(void *event_ids, size_t nr_events)
 static inline
 void __pkvm_update_clock_tracing(u32 mult, u32 shift, u64 epoch_ns, u64 epoch_cyc) { }
 static inline int __pkvm_load_tracing(unsigned long desc_va, size_t desc_size) { return -ENODEV; }
-static inline void __pkvm_teardown_tracing(void) { }
+static inline int __pkvm_teardown_tracing(void) { return -ENODEV; }
 static inline int __pkvm_enable_tracing(bool enable) { return -ENODEV; }
 static inline int __pkvm_reset_tracing(unsigned int cpu) { return -ENODEV; }
 static inline int __pkvm_swap_reader_tracing(unsigned int cpu) { return -ENODEV; }
+static inline void __pkvm_panic_tracing(void) { }
 static inline int __pkvm_enable_event(unsigned short id, bool enable)  { return -ENODEV; }
 #define trace_hyp_printk(fmt, ...)
 

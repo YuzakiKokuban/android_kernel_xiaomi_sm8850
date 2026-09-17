@@ -247,6 +247,7 @@ void delete_from_swap_cache(struct folio *folio)
 	put_swap_folio(folio, entry);
 	folio_ref_sub(folio, folio_nr_pages(folio));
 }
+EXPORT_SYMBOL_GPL(delete_from_swap_cache);
 
 void clear_shadow_from_swap_cache(int type, unsigned long begin,
 				unsigned long end)
@@ -328,6 +329,8 @@ void free_pages_and_swap_cache(struct encoded_page **pages, int nr)
 		if (unlikely(encoded_page_flags(pages[i]) &
 			     ENCODED_PAGE_BIT_NR_PAGES_NEXT))
 			refs[folios.nr] = encoded_nr_pages(pages[++i]);
+
+		trace_android_vh_free_pages_and_swap_cache(folio);
 
 		if (folio_batch_add(&folios, folio) == 0)
 			folios_put_refs(&folios, refs);
@@ -439,6 +442,7 @@ struct folio *__read_swap_cache_async(swp_entry_t entry, gfp_t gfp_mask,
 	struct folio *new_folio = NULL;
 	struct folio *result = NULL;
 	void *shadow = NULL;
+	size_t count = 0;
 
 	*new_page_allocated = false;
 	si = get_swap_device(entry);
@@ -447,6 +451,7 @@ struct folio *__read_swap_cache_async(swp_entry_t entry, gfp_t gfp_mask,
 
 	for (;;) {
 		int err;
+		bool skip = false;
 		/*
 		 * First check the swap cache.  Since this is normally
 		 * called after swap_cache_get_folio() failed, re-calling
@@ -507,6 +512,10 @@ struct folio *__read_swap_cache_async(swp_entry_t entry, gfp_t gfp_mask,
 		 * __read_swap_cache_async(), which has set SWAP_HAS_CACHE
 		 * in swap_map, but not yet added its folio to swap cache.
 		 */
+		trace_android_rvh_read_swap_cache_async_timeout(&count, &skip);
+		if (skip)
+			continue;
+
 		schedule_timeout_uninterruptible(1);
 	}
 

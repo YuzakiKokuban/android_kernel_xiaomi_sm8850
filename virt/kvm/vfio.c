@@ -38,13 +38,21 @@ struct kvm_vfio {
 
 #ifdef CONFIG_VFIO_PKVM_IOMMU
 struct kvm_pviommu {
-	struct kvm_device *dev;
+	struct kvm *kvm;
 	int fd;
 };
 #endif
 
 static void kvm_vfio_file_set_kvm(struct file *file, struct kvm *kvm)
 {
+	/*
+	 * These symbols can't be added to KMI, as it pulls a lot of internal kernel structs
+	 * to the KMI which is impractical to track. Instead, for Android kernels both VFIO and
+	 * KVM are built-in and not modules, so they can directly call each other in that case.
+	 */
+#if IS_BUILTIN(CONFIG_VFIO)
+	vfio_file_set_kvm(file, kvm);
+#else
 	void (*fn)(struct file *file, struct kvm *kvm);
 
 	fn = symbol_get(vfio_file_set_kvm);
@@ -54,6 +62,7 @@ static void kvm_vfio_file_set_kvm(struct file *file, struct kvm *kvm)
 	fn(file, kvm);
 
 	symbol_put(vfio_file_set_kvm);
+#endif
 }
 
 static bool kvm_vfio_file_enforced_coherent(struct file *file)
@@ -74,6 +83,10 @@ static bool kvm_vfio_file_enforced_coherent(struct file *file)
 
 static bool kvm_vfio_file_is_valid(struct file *file)
 {
+	/* See kvm_vfio_file_set_kvm() */
+#if IS_BUILTIN(CONFIG_VFIO)
+	return vfio_file_is_valid(file);
+#else
 	bool (*fn)(struct file *file);
 	bool ret;
 
@@ -86,10 +99,15 @@ static bool kvm_vfio_file_is_valid(struct file *file)
 	symbol_put(vfio_file_is_valid);
 
 	return ret;
+#endif
 }
 
 static struct device *kvm_vfio_file_get_device(struct file *file)
 {
+	/* See kvm_vfio_file_set_kvm() */
+#if IS_BUILTIN(CONFIG_VFIO)
+	return vfio_file_get_device(file);
+#else
 	struct device *(*fn)(struct file *file);
 	struct device *dev;
 
@@ -102,10 +120,15 @@ static struct device *kvm_vfio_file_get_device(struct file *file)
 	symbol_put(vfio_file_get_device);
 
 	return dev;
+#endif
 }
 
 static struct iommu_group *kvm_vfio_file_iommu_group(struct file *file)
 {
+	/* See kvm_vfio_file_set_kvm() */
+#if IS_BUILTIN(CONFIG_VFIO)
+	return vfio_file_iommu_group(file);
+#else
 	struct iommu_group *(*fn)(struct file *file);
 	struct iommu_group *ret;
 
@@ -118,6 +141,7 @@ static struct iommu_group *kvm_vfio_file_iommu_group(struct file *file)
 	symbol_put(vfio_file_iommu_group);
 
 	return ret;
+#endif
 }
 
 #ifdef CONFIG_SPAPR_TCE_IOMMU
@@ -381,7 +405,7 @@ static int kvm_vfio_pviommu_set_config(struct file *fiommu, struct kvm_vfio_iomm
 	if (ret)
 		goto err_fput;
 
-	ret = kvm_call_hyp_nvhe(__pkvm_pviommu_add_vsid, pviommu->dev->kvm, pviommu->fd,
+	ret = kvm_call_hyp_nvhe(__pkvm_pviommu_add_vsid, pviommu->kvm, pviommu->fd,
 				iommu, phys_sid, config->vsid);
 
 err_fput:
@@ -415,6 +439,7 @@ static int pviommufd_release(struct inode *i, struct file *filp)
 {
 	struct kvm_pviommu *pviommu = filp->private_data;
 
+	kvm_put_kvm(pviommu->kvm);
 	kfree(pviommu);
 	return 0;
 }
@@ -435,12 +460,14 @@ static int kvm_vfio_pviommu_attach(struct kvm_device *dev)
 	if (!pviommu)
 		return -ENOMEM;
 
-	pviommu->dev = dev;
+	pviommu->kvm = dev->kvm;
 
+	kvm_get_kvm(dev->kvm);
 	filep = anon_inode_getfile("kvm-pviommu", &pviommu_fops, pviommu, O_CLOEXEC);
 	if (IS_ERR(filep)) {
-		ret = PTR_ERR(filep);
-		goto out_free;
+		kvm_put_kvm(dev->kvm);
+		kfree(pviommu);
+		return PTR_ERR(filep);
 	}
 
 	fdno = get_unused_fd_flags(O_CLOEXEC);
@@ -456,13 +483,11 @@ static int kvm_vfio_pviommu_attach(struct kvm_device *dev)
 
 	pviommu->fd = fdno;
 	fd_install(fdno, filep);
-	return pviommu->fd;
+	return fdno;
 out_err:
 	put_unused_fd(fdno);
 out_fput:
 	fput(filep);
-out_free:
-	kfree(pviommu);
 	return ret;
 }
 

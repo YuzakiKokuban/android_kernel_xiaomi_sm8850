@@ -5,13 +5,18 @@
 //! Utilities for working with `struct poll_table`.
 
 use crate::{
+    alloc::AllocError,
     bindings,
     fs::File,
     prelude::*,
     sync::{CondVar, LockClassKey},
-    types::Opaque,
+    types::Opaque, //
 };
-use core::ops::Deref;
+use core::{
+    marker::PhantomData,
+    mem::ManuallyDrop,
+    ops::Deref, //
+};
 
 /// Creates a [`PollCondVar`] initialiser with the given name and a newly-created lock class.
 #[macro_export]
@@ -23,58 +28,43 @@ macro_rules! new_poll_condvar {
     };
 }
 
-/// Wraps the kernel's `struct poll_table`.
+/// Wraps the kernel's `poll_table`.
 ///
 /// # Invariants
 ///
-/// This struct contains a valid `struct poll_table`.
-///
-/// For a `struct poll_table` to be valid, its `_qproc` function must follow the safety
-/// requirements of `_qproc` functions:
-///
-/// * The `_qproc` function is given permission to enqueue a waiter to the provided `poll_table`
-///   during the call. Once the waiter is removed and an rcu grace period has passed, it must no
-///   longer access the `wait_queue_head`.
+/// The pointer must be null or reference a valid `poll_table`.
 #[repr(transparent)]
-pub struct PollTable(Opaque<bindings::poll_table>);
+pub struct PollTable<'a> {
+    table: *mut bindings::poll_table,
+    _lifetime: PhantomData<&'a bindings::poll_table>,
+}
 
-impl PollTable {
-    /// Creates a reference to a [`PollTable`] from a valid pointer.
+impl<'a> PollTable<'a> {
+    /// Creates a [`PollTable`] from a valid pointer.
     ///
     /// # Safety
     ///
-    /// The caller must ensure that for the duration of 'a, the pointer will point at a valid poll
-    /// table (as defined in the type invariants).
-    ///
-    /// The caller must also ensure that the `poll_table` is only accessed via the returned
-    /// reference for the duration of 'a.
-    pub unsafe fn from_ptr<'a>(ptr: *mut bindings::poll_table) -> &'a mut PollTable {
-        // SAFETY: The safety requirements guarantee the validity of the dereference, while the
-        // `PollTable` type being transparent makes the cast ok.
-        unsafe { &mut *ptr.cast() }
-    }
-
-    fn get_qproc(&self) -> bindings::poll_queue_proc {
-        let ptr = self.0.get();
-        // SAFETY: The `ptr` is valid because it originates from a reference, and the `_qproc`
-        // field is not modified concurrently with this call since we have an immutable reference.
-        unsafe { (*ptr)._qproc }
+    /// The pointer must be null or reference a valid `poll_table` for the duration of `'a`.
+    pub unsafe fn from_raw(table: *mut bindings::poll_table) -> Self {
+        // INVARIANTS: The safety requirements are the same as the struct invariants.
+        PollTable {
+            table,
+            _lifetime: PhantomData,
+        }
     }
 
     /// Register this [`PollTable`] with the provided [`PollCondVar`], so that it can be notified
     /// using the condition variable.
-    pub fn register_wait(&mut self, file: &File, cv: &PollCondVar) {
-        if let Some(qproc) = self.get_qproc() {
-            // SAFETY: The pointers to `file` and `self` need to be valid for the duration of this
-            // call to `qproc`, which they are because they are references.
-            //
-            // The `cv.wait_queue_head` pointer must be valid until an rcu grace period after the
-            // waiter is removed. The `PollCondVar` is pinned, so before `cv.wait_queue_head` can
-            // be destroyed, the destructor must run. That destructor first removes all waiters,
-            // and then waits for an rcu grace period. Therefore, `cv.wait_queue_head` is valid for
-            // long enough.
-            unsafe { qproc(file.as_ptr() as _, cv.wait_queue_head.get(), self.0.get()) };
-        }
+    pub fn register_wait(&self, file: &File, cv: &PollCondVar) {
+        // SAFETY:
+        // * `file.as_ptr()` references a valid file for the duration of this call.
+        // * `self.table` is null or references a valid poll_table for the duration of this call.
+        // * Since `PollCondVar` is pinned, its destructor is guaranteed to run before the memory
+        //   containing `cv.wait_queue_head` is invalidated. Since the destructor clears all
+        //   waiters and then waits for an rcu grace period, it's guaranteed that
+        //   `cv.wait_queue_head` remains valid for at least an rcu grace period after the removal
+        //   of the last waiter.
+        unsafe { bindings::poll_wait(file.as_ptr(), cv.wait_queue_head.get(), self.table) }
     }
 }
 
@@ -82,6 +72,7 @@ impl PollTable {
 ///
 /// [`CondVar`]: crate::sync::CondVar
 #[pin_data(PinnedDrop)]
+#[repr(transparent)]
 pub struct PollCondVar {
     #[pin]
     inner: CondVar,
@@ -93,6 +84,13 @@ impl PollCondVar {
         pin_init!(Self {
             inner <- CondVar::new(name, key),
         })
+    }
+
+    /// Clear anything registered using `register_wait`.
+    pub fn clear(&self) {
+        // SAFETY: The pointer points at a valid `wait_queue_head`. The destructor waits an rcu
+        // grace period before the wait queue is freed.
+        unsafe { bindings::__wake_up_pollfree(self.inner.wait_queue_head.get()) };
     }
 }
 
@@ -108,14 +106,74 @@ impl Deref for PollCondVar {
 #[pinned_drop]
 impl PinnedDrop for PollCondVar {
     fn drop(self: Pin<&mut Self>) {
-        // Clear anything registered using `register_wait`.
-        //
-        // SAFETY: The pointer points at a valid `wait_queue_head`.
-        unsafe { bindings::__wake_up_pollfree(self.inner.wait_queue_head.get()) };
+        self.clear();
 
         // Wait for epoll items to be properly removed.
         //
         // SAFETY: Just an FFI call.
         unsafe { bindings::synchronize_rcu() };
+    }
+}
+
+/// A [`KBox<PollCondVar>`] that uses `kfree_rcu`.
+///
+/// [`KBox<PollCondVar>`]: PollCondVar
+pub struct PollCondVarBox {
+    inner: ManuallyDrop<Pin<KBox<PollCondVarBoxInner>>>,
+}
+
+#[pin_data]
+#[repr(C)]
+struct PollCondVarBoxInner {
+    #[pin]
+    inner: PollCondVar,
+    rcu: Opaque<bindings::callback_head>,
+}
+
+// SAFETY: PollCondVar is Send
+unsafe impl Send for PollCondVarBoxInner {}
+// SAFETY: PollCondVar is Sync
+unsafe impl Sync for PollCondVarBoxInner {}
+
+impl PollCondVarBox {
+    /// Constructs a new boxed [`PollCondVar`].
+    pub fn new(name: &'static CStr, key: &'static LockClassKey) -> Result<Self, AllocError> {
+        let b = KBox::pin_init(
+            pin_init!(PollCondVarBoxInner {
+                inner <- PollCondVar::new(name, key),
+                rcu: Opaque::uninit(),
+            }),
+            GFP_KERNEL,
+        )
+        .map_err(|_| AllocError)?;
+
+        Ok(PollCondVarBox {
+            inner: ManuallyDrop::new(b),
+        })
+    }
+}
+
+impl Deref for PollCondVarBox {
+    type Target = PollCondVar;
+    fn deref(&self) -> &PollCondVar {
+        &self.inner.inner
+    }
+}
+
+impl Drop for PollCondVarBox {
+    fn drop(&mut self) {
+        // SAFETY: ManuallyDrop::take ok because not already taken.
+        let boxed = unsafe { ManuallyDrop::take(&mut self.inner) };
+
+        // SAFETY: The code below frees the box without calling the actual destructor of the type,
+        // but it's okay because it re-implements the destructor using `kfree_rcu()` in place of
+        // `synchronize_rcu()`.
+        let ptr = KBox::into_raw(unsafe { Pin::into_inner_unchecked(boxed) });
+
+        // SAFETY: The pointer points at a valid `wait_queue_head`.
+        unsafe { bindings::__wake_up_pollfree((*ptr).inner.inner.wait_queue_head.get()) };
+
+        // SAFETY: This was allocated using `KBox::pin_init`, so it can be freed with `kvfree`.
+        unsafe { bindings::kvfree_call_rcu((*ptr).rcu.get(), ptr.cast::<ffi::c_void>()) };
     }
 }

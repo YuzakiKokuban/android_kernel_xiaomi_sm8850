@@ -86,7 +86,7 @@ enum {
 
 /* flags that prevent us from merging requests: */
 #define RQF_NOMERGE_FLAGS \
-	(RQF_STARTED | RQF_FLUSH_SEQ | RQF_SPECIAL_PAYLOAD)
+	(RQF_STARTED | RQF_FLUSH_SEQ | RQF_DONTPREP | RQF_SPECIAL_PAYLOAD)
 
 enum mq_rq_state {
 	MQ_RQ_IDLE		= 0,
@@ -157,9 +157,6 @@ struct request {
 	struct blk_crypto_keyslot *crypt_keyslot;
 #endif
 
-	enum rw_hint write_hint;
-	unsigned short ioprio;
-
 	enum mq_rq_state state;
 	atomic_t ref;
 
@@ -226,7 +223,9 @@ static inline bool blk_rq_is_passthrough(struct request *rq)
 
 static inline unsigned short req_get_ioprio(struct request *req)
 {
-	return req->ioprio;
+	if (req->bio)
+		return req->bio->bi_ioprio;
+	return 0;
 }
 
 #define rq_data_dir(rq)		(op_is_write(req_op(rq)) ? WRITE : READ)
@@ -957,6 +956,8 @@ void blk_mq_unfreeze_queue_non_owner(struct request_queue *q);
 void blk_freeze_queue_start_non_owner(struct request_queue *q);
 
 void blk_mq_map_queues(struct blk_mq_queue_map *qmap);
+void blk_mq_map_hw_queues(struct blk_mq_queue_map *qmap,
+			  struct device *dev, unsigned int offset);
 void blk_mq_update_nr_hw_queues(struct blk_mq_tag_set *set, int nr_hw_queues);
 
 void blk_mq_quiesce_queue_nowait(struct request_queue *q);
@@ -1019,7 +1020,6 @@ static inline void blk_rq_bio_prep(struct request *rq, struct bio *bio,
 	rq->nr_phys_segments = nr_segs;
 	rq->__data_len = bio->bi_iter.bi_size;
 	rq->bio = rq->biotail = bio;
-	rq->ioprio = bio_prio(bio);
 }
 
 void blk_mq_hctx_set_fq_lock_class(struct blk_mq_hw_ctx *hctx,
@@ -1205,5 +1205,16 @@ static inline int blk_rq_map_sg(struct request_queue *q, struct request *rq,
 	return __blk_rq_map_sg(q, rq, sglist, &last_sg);
 }
 void blk_dump_rq_flags(struct request *, char *);
+
+static inline bool blk_rq_is_seq_zoned_write(struct request *rq)
+{
+	switch (req_op(rq)) {
+	case REQ_OP_WRITE:
+	case REQ_OP_WRITE_ZEROES:
+		return bdev_zone_is_seq(rq->q->disk->part0, blk_rq_pos(rq));
+	default:
+		return false;
+	}
+}
 
 #endif /* BLK_MQ_H */

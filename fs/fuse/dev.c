@@ -244,28 +244,32 @@ static unsigned int fuse_req_hash(u64 unique)
 /*
  * A new request is available, wake fiq->waitq
  */
-static void fuse_dev_wake_and_unlock(struct fuse_iqueue *fiq)
+static void fuse_dev_wake_and_unlock(struct fuse_iqueue *fiq, bool sync)
 __releases(fiq->lock)
 {
-	wake_up(&fiq->waitq);
+	if (sync)
+		wake_up_sync(&fiq->waitq);
+	else
+		wake_up(&fiq->waitq);
 	kill_fasync(&fiq->fasync, SIGIO, POLL_IN);
 	spin_unlock(&fiq->lock);
 }
 
-static void fuse_dev_queue_forget(struct fuse_iqueue *fiq, struct fuse_forget_link *forget)
+static void fuse_dev_queue_forget(struct fuse_iqueue *fiq, struct fuse_forget_link *forget,
+		bool sync)
 {
 	spin_lock(&fiq->lock);
 	if (fiq->connected) {
 		fiq->forget_list_tail->next = forget;
 		fiq->forget_list_tail = forget;
-		fuse_dev_wake_and_unlock(fiq);
+		fuse_dev_wake_and_unlock(fiq, sync);
 	} else {
 		kfree(forget);
 		spin_unlock(&fiq->lock);
 	}
 }
 
-static void fuse_dev_queue_interrupt(struct fuse_iqueue *fiq, struct fuse_req *req)
+static void fuse_dev_queue_interrupt(struct fuse_iqueue *fiq, struct fuse_req *req, bool sync)
 {
 	spin_lock(&fiq->lock);
 	if (list_empty(&req->intr_entry)) {
@@ -279,21 +283,21 @@ static void fuse_dev_queue_interrupt(struct fuse_iqueue *fiq, struct fuse_req *r
 			list_del_init(&req->intr_entry);
 			spin_unlock(&fiq->lock);
 		} else  {
-			fuse_dev_wake_and_unlock(fiq);
+			fuse_dev_wake_and_unlock(fiq, sync);
 		}
 	} else {
 		spin_unlock(&fiq->lock);
 	}
 }
 
-static void fuse_dev_queue_req(struct fuse_iqueue *fiq, struct fuse_req *req)
+static void fuse_dev_queue_req(struct fuse_iqueue *fiq, struct fuse_req *req, bool sync)
 {
 	spin_lock(&fiq->lock);
 	if (fiq->connected) {
 		if (req->in.h.opcode != FUSE_NOTIFY_REPLY)
 			req->in.h.unique = fuse_get_unique_locked(fiq);
 		list_add_tail(&req->list, &fiq->pending);
-		fuse_dev_wake_and_unlock(fiq);
+		fuse_dev_wake_and_unlock(fiq, sync);
 	} else {
 		spin_unlock(&fiq->lock);
 		req->out.h.error = -ENOTCONN;
@@ -309,13 +313,13 @@ const struct fuse_iqueue_ops fuse_dev_fiq_ops = {
 };
 EXPORT_SYMBOL_GPL(fuse_dev_fiq_ops);
 
-static void fuse_send_one(struct fuse_iqueue *fiq, struct fuse_req *req)
+static void fuse_send_one(struct fuse_iqueue *fiq, struct fuse_req *req, bool sync)
 {
 	req->in.h.len = sizeof(struct fuse_in_header) +
 		fuse_len_args(req->args->in_numargs,
 			      (struct fuse_arg *) req->args->in_args);
 	trace_fuse_request_send(req);
-	fiq->ops->send_req(fiq, req);
+	fiq->ops->send_req(fiq, req, sync);
 }
 
 void fuse_queue_forget(struct fuse_conn *fc, struct fuse_forget_link *forget,
@@ -331,7 +335,7 @@ void fuse_queue_forget(struct fuse_conn *fc, struct fuse_forget_link *forget,
 	forget->forget_one.nodeid = nodeid;
 	forget->forget_one.nlookup = nlookup;
 
-	fiq->ops->send_forget(fiq, forget);
+	fiq->ops->send_forget(fiq, forget, false);
 }
 
 static void flush_bg_queue(struct fuse_conn *fc)
@@ -345,7 +349,7 @@ static void flush_bg_queue(struct fuse_conn *fc)
 		req = list_first_entry(&fc->bg_queue, struct fuse_req, list);
 		list_del(&req->list);
 		fc->active_background++;
-		fuse_send_one(fiq, req);
+		fuse_send_one(fiq, req, false);
 	}
 }
 
@@ -404,6 +408,7 @@ void fuse_request_end(struct fuse_req *req)
 		/* Wake up waiter sleeping in request_wait_answer() */
 		wake_up(&req->waitq);
 		trace_android_vh_fuse_request_end(current);
+		trace_android_vh_fuse_request_end_ext(req, current);
 	}
 
 	if (test_bit(FR_ASYNC, &req->flags))
@@ -421,7 +426,7 @@ static int queue_interrupt(struct fuse_req *req)
 	if (unlikely(!test_bit(FR_INTERRUPTED, &req->flags)))
 		return -EINVAL;
 
-	fiq->ops->send_interrupt(fiq, req);
+	fiq->ops->send_interrupt(fiq, req, false);
 
 	return 0;
 }
@@ -479,10 +484,11 @@ static void __fuse_request_send(struct fuse_req *req)
 	BUG_ON(test_bit(FR_BACKGROUND, &req->flags));
 
 	trace_android_vh_fuse_request_send(&fiq->waitq);
+	trace_android_vh_fuse_request_send_ext(req, &fiq->waitq);
 	/* acquire extra reference, since request is still needed after
 	   fuse_request_end() */
 	__fuse_get_request(req);
-	fuse_send_one(fiq, req);
+	fuse_send_one(fiq, req, true);
 
 	request_wait_answer(req);
 	/* Pairs with smp_wmb() in fuse_request_end() */
@@ -660,7 +666,7 @@ static int fuse_simple_notify_reply(struct fuse_mount *fm,
 
 	fuse_args_to_req(req, args);
 
-	fuse_send_one(fiq, req);
+	fuse_send_one(fiq, req, false);
 
 	return 0;
 }
@@ -1323,6 +1329,7 @@ static ssize_t fuse_dev_do_read(struct fuse_dev *fud, struct file *file,
 	}
 
 	req = list_entry(fiq->pending.next, struct fuse_req, list);
+	trace_android_vh_fuse_request_fetch(req, current);
 	clear_bit(FR_PENDING, &req->flags);
 	list_del_init(&req->list);
 	spin_unlock(&fiq->lock);
@@ -1888,7 +1895,7 @@ static void fuse_resend(struct fuse_conn *fc)
 	}
 	/* iq and pq requests are both oldest to newest */
 	list_splice(&to_queue, &fiq->pending);
-	fuse_dev_wake_and_unlock(fiq);
+	fuse_dev_wake_and_unlock(fiq, false);
 }
 
 static int fuse_notify_resend(struct fuse_conn *fc)
@@ -1999,7 +2006,7 @@ static ssize_t fuse_dev_do_write(struct fuse_dev *fud,
 	 */
 	if (!oh.unique) {
 		err = fuse_notify(fc, oh.error, nbytes - sizeof(oh), cs);
-		goto out;
+		goto copy_finish;
 	}
 
 	err = -EINVAL;
@@ -2053,9 +2060,14 @@ static ssize_t fuse_dev_do_write(struct fuse_dev *fud,
 	if (!err && req->in.h.opcode == FUSE_CANONICAL_PATH && !oh.error) {
 		char *path = (char *)req->args->out_args[0].value;
 
-		path[req->args->out_args[0].size - 1] = 0;
-		req->out.h.error =
-			kern_path(path, 0, req->args->canonical_path);
+		if (req->args->out_args[0].size == 0) {
+			req->out.h.error = -EBADMSG;
+		} else {
+			/* NUL-terminate inside the page; size<=PATH_MAX by construction */
+			path[min_t(unsigned int, req->args->out_args[0].size, PATH_MAX) - 1] = 0;
+			req->out.h.error =
+				kern_path(path, 0, req->args->canonical_path);
+		}
 	}
 
 	if (!err && (req->in.h.opcode == FUSE_LOOKUP ||
@@ -2065,8 +2077,19 @@ static ssize_t fuse_dev_do_write(struct fuse_dev *fud,
 				req->args->out_args[1].value;
 		struct fuse_entry_bpf *feb = container_of(febo, struct fuse_entry_bpf, out);
 
-		if (febo->backing_action == FUSE_ACTION_REPLACE)
-			feb->backing_file = fget(febo->backing_fd);
+		if (febo->backing_action == FUSE_ACTION_REPLACE) {
+			struct file *bf = fget(febo->backing_fd);
+
+			if (bf) {
+				if (bf->f_inode->i_sb->s_magic == FUSE_SUPER_MAGIC ||
+				    bf->f_inode->i_sb->s_stack_depth >=
+						FILESYSTEM_MAX_STACK_DEPTH) {
+					fput(bf);
+					bf = ERR_PTR(-ELOOP);
+				}
+			}
+			feb->backing_file = bf;
+		}
 		if (febo->bpf_action == FUSE_ACTION_REPLACE)
 			feb->bpf_file = fget(febo->bpf_fd);
 	}

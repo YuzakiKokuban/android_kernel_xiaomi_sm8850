@@ -24,7 +24,8 @@ EXPORT_SYMBOL(hid_ops);
 
 u8 *
 dispatch_hid_bpf_device_event(struct hid_device *hdev, enum hid_report_type type, u8 *data,
-			      u32 *size, int interrupt, u64 source, bool from_bpf)
+			      size_t *buf_size, u32 *size, int interrupt, u64 source,
+			      bool from_bpf)
 {
 	struct hid_bpf_ctx_kern ctx_kern = {
 		.ctx = {
@@ -37,6 +38,9 @@ dispatch_hid_bpf_device_event(struct hid_device *hdev, enum hid_report_type type
 	};
 	struct hid_bpf_ops *e;
 	int ret;
+
+	if (unlikely(hdev->bpf.destroyed))
+		return ERR_PTR(-ENODEV);
 
 	if (type >= HID_REPORT_TYPES)
 		return ERR_PTR(-EINVAL);
@@ -71,6 +75,7 @@ dispatch_hid_bpf_device_event(struct hid_device *hdev, enum hid_report_type type
 		*size = ret;
 	}
 
+	*buf_size = ctx_kern.ctx.allocated_size;
 	return ctx_kern.data;
 }
 EXPORT_SYMBOL_GPL(dispatch_hid_bpf_device_event);
@@ -92,6 +97,9 @@ int dispatch_hid_bpf_raw_requests(struct hid_device *hdev,
 	};
 	struct hid_bpf_ops *e;
 	int ret, idx;
+
+	if (unlikely(hdev->bpf.destroyed))
+		return -ENODEV;
 
 	if (rtype >= HID_REPORT_TYPES)
 		return -EINVAL;
@@ -129,6 +137,9 @@ int dispatch_hid_bpf_output_report(struct hid_device *hdev,
 	};
 	struct hid_bpf_ops *e;
 	int ret, idx;
+
+	if (unlikely(hdev->bpf.destroyed))
+		return -ENODEV;
 
 	idx = srcu_read_lock(&hdev->bpf.srcu);
 	list_for_each_entry_srcu(e, &hdev->bpf.prog_list, list,
@@ -503,7 +514,7 @@ __hid_bpf_input_report(struct hid_bpf_ctx *ctx, enum hid_report_type type, u8 *b
 	if (ret)
 		return ret;
 
-	return hid_ops->hid_input_report(ctx->hid, type, buf, size, 0, (u64)(long)ctx, true,
+	return hid_ops->hid_input_report(ctx->hid, type, buf, size, size, 0, (u64)(long)ctx, true,
 					 lock_already_taken);
 }
 
