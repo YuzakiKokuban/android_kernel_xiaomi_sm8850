@@ -15,7 +15,8 @@
 #include <linux/compat.h>
 
 #define HYBRIDMOUNT_VERSION "hm1"
-#define HYBRIDMOUNT_MAGIC_SIG 0x4E4F4D4F554E54ULL /* upstream magic; replacement pending decision */
+/* Must match meta-hybrid_mount/src/vfs/protocol.rs::MAGIC. */
+#define HYBRIDMOUNT_MAGIC_SIG 0x4859425249444D4FULL
 #define HM_FLAG_IS_DIR      (1 << 0)
 #define HM_FLAG_VIRTUAL_DIR (1 << 1)
 #define HM_FLAG_WHITEOUT    (1 << 2)
