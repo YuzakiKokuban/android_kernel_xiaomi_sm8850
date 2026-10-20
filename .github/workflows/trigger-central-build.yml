@@ -17,7 +17,6 @@ jobs:
             {
               "project": "mi17_sm8850",
               "branch": "${{ github.ref_name }}",
-              "apply_susfs": true,
               "apply_bbg": false,
               "apply_hybridmount": true
             }
